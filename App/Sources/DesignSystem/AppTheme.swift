@@ -49,7 +49,14 @@ enum AppTheme {
 }
 
 struct LunarPrimaryButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var isEnabled
+
   func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(
+      cornerRadius: AppTheme.Metrics.buttonCornerRadius,
+      style: .continuous
+    )
+
     configuration.label
       .font(AppTheme.Typography.button)
       .foregroundStyle(AppTheme.Colors.accentForeground)
@@ -57,17 +64,29 @@ struct LunarPrimaryButtonStyle: ButtonStyle {
       .padding(.horizontal, 16)
       .padding(.vertical, 10)
       .background(
-        RoundedRectangle(cornerRadius: AppTheme.Metrics.buttonCornerRadius, style: .continuous)
+        shape
           .fill(AppTheme.Colors.accent)
           .opacity(configuration.isPressed ? 0.84 : 1)
       )
+      .opacity(isEnabled ? 1 : 0.45)
+      .contentShape(shape)
+      .clipShape(shape)
+      .focusEffectDisabled()
+      .focusable(false)
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
       .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }
 }
 
 struct LunarSecondaryButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var isEnabled
+
   func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(
+      cornerRadius: AppTheme.Metrics.buttonCornerRadius,
+      style: .continuous
+    )
+
     configuration.label
       .font(AppTheme.Typography.button)
       .foregroundStyle(AppTheme.Colors.textPrimary)
@@ -75,13 +94,18 @@ struct LunarSecondaryButtonStyle: ButtonStyle {
       .padding(.horizontal, 16)
       .padding(.vertical, 10)
       .background(
-        RoundedRectangle(cornerRadius: AppTheme.Metrics.buttonCornerRadius, style: .continuous)
+        shape
           .fill(AppTheme.Colors.surfaceElevated.opacity(configuration.isPressed ? 0.95 : 0.82))
           .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.Metrics.buttonCornerRadius, style: .continuous)
+            shape
               .stroke(AppTheme.Colors.surfaceBorder, lineWidth: 1)
           )
       )
+      .opacity(isEnabled ? 1 : 0.45)
+      .contentShape(shape)
+      .clipShape(shape)
+      .focusEffectDisabled()
+      .focusable(false)
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
       .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }
