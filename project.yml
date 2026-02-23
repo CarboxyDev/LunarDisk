@@ -1,0 +1,46 @@
+name: Lunardisk
+options:
+  minimumXcodeGenVersion: 2.39.0
+settings:
+  base:
+    SWIFT_VERSION: 5.10
+targets:
+  Lunardisk:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: App/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lunardisk.app
+        PRODUCT_NAME: Lunardisk
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Lunardisk
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+    dependencies:
+      - package: CoreScan
+        product: CoreScan
+      - package: Visualization
+        product: Visualization
+      - package: LunardiskAI
+        product: LunardiskAI
+    scheme:
+      testTargets:
+        - LunardiskTests
+  LunardiskTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: App/Tests
+    dependencies:
+      - target: Lunardisk
+packages:
+  CoreScan:
+    path: Modules/CoreScan
+  Visualization:
+    path: Modules/Visualization
+  LunardiskAI:
+    path: Modules/LunardiskAI
+

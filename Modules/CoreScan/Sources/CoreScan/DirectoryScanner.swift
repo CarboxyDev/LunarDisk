@@ -1,0 +1,138 @@
+import Foundation
+
+public protocol FileScanning: Sendable {
+  func scan(at url: URL, maxDepth: Int?) async throws -> FileNode
+}
+
+public enum ScanError: Error, LocalizedError {
+  case notFound(path: String)
+  case unreadable(path: String, underlying: Error)
+
+  public var errorDescription: String? {
+    switch self {
+    case let .notFound(path):
+      return "Path not found: \(path)"
+    case let .unreadable(path, underlying):
+      return "Could not read path \(path): \(underlying.localizedDescription)"
+    }
+  }
+}
+
+public actor DirectoryScanner: FileScanning {
+  private let fileManager: FileManager
+  private let keys: Set<URLResourceKey> = [
+    .isDirectoryKey,
+    .isSymbolicLinkKey,
+    .fileSizeKey,
+    .totalFileAllocatedSizeKey,
+    .fileAllocatedSizeKey
+  ]
+
+  public init(fileManager: FileManager = .default) {
+    self.fileManager = fileManager
+  }
+
+  public func scan(at url: URL, maxDepth: Int? = nil) async throws -> FileNode {
+    guard fileManager.fileExists(atPath: url.path) else {
+      throw ScanError.notFound(path: url.path)
+    }
+    return try await scanNode(at: url, depth: 0, maxDepth: maxDepth)
+  }
+
+  private func scanNode(at url: URL, depth: Int, maxDepth: Int?) async throws -> FileNode {
+    let values = try resourceValues(for: url)
+    let name = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+    let isDirectory = values.isDirectory ?? false
+
+    if !isDirectory {
+      return FileNode(
+        name: name,
+        path: url.path,
+        isDirectory: false,
+        sizeBytes: fileSize(from: values)
+      )
+    }
+
+    if let maxDepth, depth >= maxDepth {
+      return FileNode(
+        name: name,
+        path: url.path,
+        isDirectory: true,
+        sizeBytes: try shallowDirectorySize(at: url),
+        children: []
+      )
+    }
+
+    let childURLs: [URL]
+    do {
+      childURLs = try fileManager.contentsOfDirectory(
+        at: url,
+        includingPropertiesForKeys: Array(keys),
+        options: [.skipsPackageDescendants]
+      )
+    } catch {
+      throw ScanError.unreadable(path: url.path, underlying: error)
+    }
+
+    var children: [FileNode] = []
+    children.reserveCapacity(childURLs.count)
+
+    for childURL in childURLs {
+      let childValues = try resourceValues(for: childURL)
+      if childValues.isSymbolicLink == true {
+        continue
+      }
+      let childNode = try await scanNode(at: childURL, depth: depth + 1, maxDepth: maxDepth)
+      children.append(childNode)
+    }
+
+    let total = children.reduce(Int64(0)) { partialResult, child in
+      partialResult + child.sizeBytes
+    }
+
+    return FileNode(
+      name: name,
+      path: url.path,
+      isDirectory: true,
+      sizeBytes: total,
+      children: children
+    )
+  }
+
+  private func shallowDirectorySize(at url: URL) throws -> Int64 {
+    do {
+      let childURLs = try fileManager.contentsOfDirectory(
+        at: url,
+        includingPropertiesForKeys: Array(keys),
+        options: [.skipsPackageDescendants]
+      )
+      return try childURLs.reduce(Int64(0)) { partialResult, childURL in
+        let values = try resourceValues(for: childURL)
+        if values.isDirectory == true {
+          return partialResult
+        }
+        return partialResult + fileSize(from: values)
+      }
+    } catch {
+      throw ScanError.unreadable(path: url.path, underlying: error)
+    }
+  }
+
+  private func resourceValues(for url: URL) throws -> URLResourceValues {
+    do {
+      return try url.resourceValues(forKeys: keys)
+    } catch {
+      throw ScanError.unreadable(path: url.path, underlying: error)
+    }
+  }
+
+  private func fileSize(from values: URLResourceValues) -> Int64 {
+    if let fileSize = values.fileSize {
+      return Int64(fileSize)
+    }
+    if let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize {
+      return Int64(allocated)
+    }
+    return 0
+  }
+}
