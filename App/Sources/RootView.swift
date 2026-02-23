@@ -70,10 +70,7 @@ struct RootView: View {
 
         Spacer()
 
-        statusPill(
-          title: model.isScanning ? "Scanning" : "Idle",
-          icon: model.isScanning ? "waveform.path.ecg" : "checkmark.circle"
-        )
+        statusPill()
       }
 
       HStack(spacing: 10) {
@@ -112,21 +109,77 @@ struct RootView: View {
     .background(panelBackground())
   }
 
-  private func statusPill(title: String, icon: String) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: icon)
+  private func statusPill() -> some View {
+    let style = statusPillStyle
+
+    return HStack(spacing: 6) {
+      Image(systemName: style.icon)
         .font(.system(size: 11, weight: .semibold))
-        .scaleEffect(model.isScanning ? 1.05 : 1)
-        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: model.isScanning)
-      Text(title)
+      Text(style.title)
         .font(.system(size: 12, weight: .semibold))
     }
-    .foregroundStyle(AppTheme.Colors.textSecondary)
+    .foregroundStyle(style.foreground)
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
     .background(
       Capsule(style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.7))
+        .fill(style.background)
+        .overlay(
+          Capsule(style: .continuous)
+            .stroke(style.border, lineWidth: 1)
+        )
+        .lunarShimmer(active: style.shouldShimmer)
+    )
+  }
+
+  private var statusPillStyle: (
+    title: String,
+    icon: String,
+    foreground: Color,
+    background: Color,
+    border: Color,
+    shouldShimmer: Bool
+  ) {
+    if model.isScanning {
+      return (
+        title: "Scanning",
+        icon: "waveform.path.ecg",
+        foreground: AppTheme.Colors.textPrimary,
+        background: AppTheme.Colors.surfaceElevated.opacity(0.8),
+        border: AppTheme.Colors.cardBorder,
+        shouldShimmer: true
+      )
+    }
+
+    if model.rootNode != nil && model.lastFailure == nil {
+      return (
+        title: "Scan Complete",
+        icon: "checkmark.seal.fill",
+        foreground: Color(red: 0.80, green: 0.95, blue: 0.83),
+        background: Color(red: 0.12, green: 0.22, blue: 0.15),
+        border: Color(red: 0.33, green: 0.54, blue: 0.39),
+        shouldShimmer: false
+      )
+    }
+
+    if model.lastFailure != nil {
+      return (
+        title: "Needs Attention",
+        icon: "exclamationmark.triangle.fill",
+        foreground: Color(red: 0.98, green: 0.86, blue: 0.66),
+        background: Color(red: 0.25, green: 0.18, blue: 0.11),
+        border: Color(red: 0.56, green: 0.40, blue: 0.24),
+        shouldShimmer: false
+      )
+    }
+
+    return (
+      title: "Idle",
+      icon: "circle.fill",
+      foreground: AppTheme.Colors.textSecondary,
+      background: AppTheme.Colors.surfaceElevated.opacity(0.7),
+      border: AppTheme.Colors.cardBorder,
+      shouldShimmer: false
     )
   }
 
@@ -561,7 +614,6 @@ struct RootView: View {
           .font(.system(size: 40, weight: .semibold))
           .foregroundStyle(AppTheme.Colors.textPrimary)
       }
-      .lunarShimmer(active: true)
 
       VStack(spacing: 8) {
         Text("Before Full-Disk Scan")
@@ -746,7 +798,6 @@ private struct AnimatedScanGlyph: View {
         .scaleEffect(isAnimating ? 1.08 : 0.92)
         .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isAnimating)
     }
-    .lunarShimmer(active: true)
     .onAppear {
       isAnimating = true
     }
