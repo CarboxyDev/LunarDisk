@@ -78,12 +78,27 @@ public actor DirectoryScanner: FileScanning {
     children.reserveCapacity(childURLs.count)
 
     for childURL in childURLs {
-      let childValues = try resourceValues(for: childURL)
+      let childValues: URLResourceValues
+      do {
+        childValues = try resourceValues(for: childURL)
+      } catch {
+        if shouldSkip(error: error) {
+          continue
+        }
+        throw error
+      }
       if childValues.isSymbolicLink == true {
         continue
       }
-      let childNode = try await scanNode(at: childURL, depth: depth + 1, maxDepth: maxDepth)
-      children.append(childNode)
+      do {
+        let childNode = try await scanNode(at: childURL, depth: depth + 1, maxDepth: maxDepth)
+        children.append(childNode)
+      } catch {
+        if shouldSkip(error: error) {
+          continue
+        }
+        throw error
+      }
     }
 
     let total = children.reduce(Int64(0)) { partialResult, child in
@@ -107,7 +122,15 @@ public actor DirectoryScanner: FileScanning {
         options: [.skipsPackageDescendants]
       )
       return try childURLs.reduce(Int64(0)) { partialResult, childURL in
-        let values = try resourceValues(for: childURL)
+        let values: URLResourceValues
+        do {
+          values = try resourceValues(for: childURL)
+        } catch {
+          if shouldSkip(error: error) {
+            return partialResult
+          }
+          throw error
+        }
         if values.isDirectory == true {
           return partialResult
         }
@@ -134,5 +157,36 @@ public actor DirectoryScanner: FileScanning {
       return Int64(allocated)
     }
     return 0
+  }
+
+  private func shouldSkip(error: Error) -> Bool {
+    if case let ScanError.unreadable(_, underlying) = error {
+      return shouldSkip(error: underlying)
+    }
+
+    let nsError = error as NSError
+    if nsError.domain == NSCocoaErrorDomain {
+      let recoverableCocoaCodes: Set<Int> = [
+        NSFileReadNoPermissionError,
+        NSFileReadNoSuchFileError,
+        NSFileReadUnknownError,
+        NSFileReadInvalidFileNameError
+      ]
+      return recoverableCocoaCodes.contains(nsError.code)
+    }
+
+    if nsError.domain == NSPOSIXErrorDomain {
+      let recoverablePosixCodes: Set<Int> = [
+        Int(EACCES),
+        Int(EPERM),
+        Int(ENOENT),
+        Int(ENOTDIR),
+        Int(EBADF),
+        Int(EIO)
+      ]
+      return recoverablePosixCodes.contains(nsError.code)
+    }
+
+    return false
   }
 }

@@ -1,5 +1,7 @@
 import Foundation
 import XCTest
+import CoreScan
+import LunardiskAI
 @testable import Lunardisk
 
 @MainActor
@@ -41,6 +43,23 @@ final class LunardiskTests: XCTestCase {
 
     PersistedState.reset(scopes: [.onboarding], userDefaults: userDefaults)
     XCTAssertFalse(userDefaults.bool(forKey: PersistedState.onboardingCompletionKey))
+  }
+
+  func testSelectScanTargetResetsViewState() {
+    let model = AppModel()
+    model.rootNode = FileNode(name: "tmp", path: "/tmp", isDirectory: true, sizeBytes: 10)
+    model.insights = [Insight(severity: .info, message: "sample")]
+    model.errorMessage = "error"
+    model.lastFailure = .unknown(message: "fail")
+
+    let target = URL(fileURLWithPath: "/Users", isDirectory: true)
+    model.selectScanTarget(target)
+
+    XCTAssertEqual(model.selectedURL, target)
+    XCTAssertNil(model.rootNode)
+    XCTAssertTrue(model.insights.isEmpty)
+    XCTAssertNil(model.errorMessage)
+    XCTAssertNil(model.lastFailure)
   }
 
   private func makeIsolatedDefaults() -> UserDefaults {
