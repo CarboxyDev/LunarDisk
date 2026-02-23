@@ -5,9 +5,25 @@ import SwiftUI
 import Visualization
 
 struct RootView: View {
+  @EnvironmentObject private var onboardingState: OnboardingStateStore
   @StateObject private var model = AppModel()
 
   var body: some View {
+    Group {
+      if onboardingState.hasCompletedOnboarding {
+        scannerView
+          .transition(.opacity.combined(with: .scale(scale: 0.98)))
+      } else {
+        OnboardingView {
+          onboardingState.completeOnboarding()
+        }
+        .transition(.opacity)
+      }
+    }
+    .animation(.easeInOut(duration: 0.3), value: onboardingState.hasCompletedOnboarding)
+  }
+
+  private var scannerView: some View {
     VStack(alignment: .leading, spacing: 16) {
       controls
       Divider()
@@ -128,4 +144,3 @@ struct RootView: View {
     }
   }
 }
-

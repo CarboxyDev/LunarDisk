@@ -13,5 +13,9 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-open "$APP_PATH"
+RESET_SCOPES="${RESET_STATE:-${LUNARDISK_RESET_STATE:-}}"
+if [[ -n "$RESET_SCOPES" ]]; then
+  "$SCRIPT_DIR/reset-state.sh" "$RESET_SCOPES"
+fi
 
+open "$APP_PATH"
