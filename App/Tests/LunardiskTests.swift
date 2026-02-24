@@ -68,6 +68,34 @@ final class LunardiskTests: XCTestCase {
     }
   }
 
+  actor StrategyCapturingScanner: FileScanning {
+    private let node: FileNode
+    private var capturedStrategy: ScanSizeStrategy?
+    private var legacyMethodUsed = false
+
+    init(node: FileNode) {
+      self.node = node
+    }
+
+    func scan(at url: URL, maxDepth: Int?) async throws -> FileNode {
+      legacyMethodUsed = true
+      return node
+    }
+
+    func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy) async throws -> FileNode {
+      capturedStrategy = sizeStrategy
+      return node
+    }
+
+    func lastCapturedStrategy() -> ScanSizeStrategy? {
+      capturedStrategy
+    }
+
+    func didUseLegacyMethod() -> Bool {
+      legacyMethodUsed
+    }
+  }
+
   actor SlowCancelableAnalyzer: AIAnalyzing {
     private var observedCancellation = false
 
@@ -96,6 +124,7 @@ final class LunardiskTests: XCTestCase {
     XCTAssertFalse(model.isScanning)
     XCTAssertNil(model.errorMessage)
     XCTAssertNil(model.scanWarningMessage)
+    XCTAssertEqual(model.scanSizeStrategy, .allocated)
   }
 
   func testOnboardingStateStorePersistsCompletionAndReset() {
@@ -287,6 +316,25 @@ final class LunardiskTests: XCTestCase {
 
     XCTAssertNotNil(model.scanWarningMessage)
     XCTAssertTrue(model.scanWarningMessage?.contains("skipped 2 unreadable items") == true)
+  }
+
+  func testScanUsesSelectedSizeStrategy() async {
+    let root = FileNode(name: "root", path: "/tmp/root", isDirectory: true, sizeBytes: 128)
+    let scanner = StrategyCapturingScanner(node: root)
+    let analyzer = ControlledAnalyzer(output: [])
+    let model = AppModel(scanner: scanner, analyzer: analyzer)
+    let target = URL(fileURLWithPath: "/tmp/root", isDirectory: true)
+
+    model.scanSizeStrategy = .logical
+    model.selectScanTarget(target)
+    model.startScan()
+    await waitForRootNode(model, expectedPath: "/tmp/root")
+
+    let capturedStrategy = await scanner.lastCapturedStrategy()
+    let didUseLegacyMethod = await scanner.didUseLegacyMethod()
+
+    XCTAssertEqual(capturedStrategy, .logical)
+    XCTAssertFalse(didUseLegacyMethod)
   }
 
   func testTopConsumersStoreRefreshesWhenTreeChangesButRootSummaryMatches() async {

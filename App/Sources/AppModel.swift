@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var lastFailure: ScanFailure?
   @Published var scanWarningMessage: String?
+  // Internal-only toggle for scan sizing semantics until we add an advanced settings UI.
+  var scanSizeStrategy: ScanSizeStrategy = .allocated
 
   private let scanner: any FileScanning
   private let analyzer: any AIAnalyzing
@@ -97,7 +99,11 @@ final class AppModel: ObservableObject {
 
     do {
       try Task.checkCancellation()
-      let scannedRoot = try await scanner.scan(at: url, maxDepth: 8)
+      let scannedRoot = try await scanner.scan(
+        at: url,
+        maxDepth: 8,
+        sizeStrategy: scanSizeStrategy
+      )
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }
 

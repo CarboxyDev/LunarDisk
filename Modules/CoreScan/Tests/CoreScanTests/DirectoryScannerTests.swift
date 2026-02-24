@@ -34,10 +34,11 @@ final class DirectoryScannerTests: XCTestCase {
 
     let scanner = DirectoryScanner()
     let result = try await scanner.scan(at: root, maxDepth: nil)
+    let expected = try expectedUsage(of: [fileA, fileB])
 
     XCTAssertTrue(result.isDirectory)
     XCTAssertEqual(result.children.count, 2)
-    XCTAssertEqual(result.sizeBytes, 10)
+    XCTAssertEqual(result.sizeBytes, expected)
   }
 
   func testByteFormatterReturnsReadableString() {
@@ -80,8 +81,9 @@ final class DirectoryScannerTests: XCTestCase {
     let scanner = DirectoryScanner()
     let result = try await scanner.scan(at: root, maxDepth: nil)
     let diagnostics = await scanner.lastScanDiagnostics()
+    let expectedVisibleSize = try expectedUsage(of: [accessibleFile])
 
-    XCTAssertEqual(result.sizeBytes, 5)
+    XCTAssertEqual(result.sizeBytes, expectedVisibleSize)
     XCTAssertEqual(result.children.count, 1)
     XCTAssertEqual(result.children.first?.name, "visible.txt")
     XCTAssertTrue((diagnostics?.skippedItemCount ?? 0) >= 1)
@@ -165,14 +167,89 @@ final class DirectoryScannerTests: XCTestCase {
     let scanner = DirectoryScanner()
     let result = try await scanner.scan(at: root, maxDepth: 2)
     let diagnostics = await scanner.lastScanDiagnostics()
+    let expected = try expectedUsage(of: [deepFile])
 
-    XCTAssertEqual(result.sizeBytes, 11)
+    XCTAssertEqual(result.sizeBytes, expected)
     XCTAssertEqual(result.children.count, 1)
-    XCTAssertEqual(result.children.first?.sizeBytes, 11)
+    XCTAssertEqual(result.children.first?.sizeBytes, expected)
     XCTAssertEqual(result.children.first?.children.count, 1)
-    XCTAssertEqual(result.children.first?.children.first?.sizeBytes, 11)
+    XCTAssertEqual(result.children.first?.children.first?.sizeBytes, expected)
     XCTAssertTrue(result.children.first?.children.first?.children.isEmpty == true)
     XCTAssertFalse(diagnostics?.isPartialResult == true)
+  }
+
+  func testScanPrefersAllocatedSizeOverLogicalSizeWhenAvailable() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sparseFile = root.appendingPathComponent("sparse.bin")
+    FileManager.default.createFile(atPath: sparseFile.path, contents: Data(), attributes: nil)
+    let fileHandle = try FileHandle(forWritingTo: sparseFile)
+    try fileHandle.seek(toOffset: 8 * 1_024 * 1_024)
+    try fileHandle.write(contentsOf: Data([0xAB]))
+    try fileHandle.close()
+
+    let values = try sparseFile.resourceValues(forKeys: [
+      .fileSizeKey,
+      .totalFileAllocatedSizeKey,
+      .fileAllocatedSizeKey
+    ])
+    guard let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize else {
+      throw XCTSkip("Allocated size metadata unavailable on this filesystem")
+    }
+    guard let logical = values.fileSize else {
+      throw XCTSkip("Logical file size metadata unavailable on this filesystem")
+    }
+    guard allocated < logical else {
+      throw XCTSkip("Filesystem did not report sparse allocation difference")
+    }
+
+    let scanner = DirectoryScanner()
+    let result = try await scanner.scan(at: root, maxDepth: nil, sizeStrategy: .allocated)
+
+    XCTAssertEqual(result.sizeBytes, Int64(allocated))
+    XCTAssertEqual(result.children.count, 1)
+    XCTAssertEqual(result.children.first?.sizeBytes, Int64(allocated))
+    XCTAssertLessThan(result.sizeBytes, Int64(logical))
+  }
+
+  func testScanCanUseLogicalSizeStrategyWhenRequested() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sparseFile = root.appendingPathComponent("sparse-logical.bin")
+    FileManager.default.createFile(atPath: sparseFile.path, contents: Data(), attributes: nil)
+    let fileHandle = try FileHandle(forWritingTo: sparseFile)
+    try fileHandle.seek(toOffset: 8 * 1_024 * 1_024)
+    try fileHandle.write(contentsOf: Data([0xCD]))
+    try fileHandle.close()
+
+    let values = try sparseFile.resourceValues(forKeys: [
+      .fileSizeKey,
+      .totalFileAllocatedSizeKey,
+      .fileAllocatedSizeKey
+    ])
+    guard let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize else {
+      throw XCTSkip("Allocated size metadata unavailable on this filesystem")
+    }
+    guard let logical = values.fileSize else {
+      throw XCTSkip("Logical file size metadata unavailable on this filesystem")
+    }
+    guard allocated < logical else {
+      throw XCTSkip("Filesystem did not report sparse allocation difference")
+    }
+
+    let scanner = DirectoryScanner()
+    let allocatedResult = try await scanner.scan(at: root, maxDepth: nil, sizeStrategy: .allocated)
+    let logicalResult = try await scanner.scan(at: root, maxDepth: nil, sizeStrategy: .logical)
+
+    XCTAssertEqual(allocatedResult.sizeBytes, Int64(allocated))
+    XCTAssertEqual(logicalResult.sizeBytes, Int64(logical))
+    XCTAssertGreaterThan(logicalResult.sizeBytes, allocatedResult.sizeBytes)
   }
 
   func testSortedChildrenBySizeBreaksTiesDeterministically() {
@@ -189,5 +266,19 @@ final class DirectoryScannerTests: XCTestCase {
     )
 
     XCTAssertEqual(root.sortedChildrenBySize.map(\.path), ["/root/a", "/root/b", "/root/c"])
+  }
+
+  private func expectedUsage(of urls: [URL]) throws -> Int64 {
+    try urls.reduce(Int64(0)) { partialResult, url in
+      let values = try url.resourceValues(forKeys: [
+        .fileSizeKey,
+        .totalFileAllocatedSizeKey,
+        .fileAllocatedSizeKey
+      ])
+      if let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize {
+        return partialResult + Int64(allocated)
+      }
+      return partialResult + Int64(values.fileSize ?? 0)
+    }
   }
 }

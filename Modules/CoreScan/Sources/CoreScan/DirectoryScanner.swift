@@ -14,12 +14,22 @@ public struct ScanDiagnostics: Equatable, Sendable {
   }
 }
 
+public enum ScanSizeStrategy: String, CaseIterable, Sendable {
+  case allocated
+  case logical
+}
+
 public protocol FileScanning: Sendable {
   func scan(at url: URL, maxDepth: Int?) async throws -> FileNode
+  func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy) async throws -> FileNode
   func lastScanDiagnostics() async -> ScanDiagnostics?
 }
 
 public extension FileScanning {
+  func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy) async throws -> FileNode {
+    try await scan(at: url, maxDepth: maxDepth)
+  }
+
   func lastScanDiagnostics() async -> ScanDiagnostics? {
     nil
   }
@@ -58,12 +68,25 @@ public actor DirectoryScanner: FileScanning {
   }
 
   public func scan(at url: URL, maxDepth: Int? = nil) async throws -> FileNode {
+    try await scan(at: url, maxDepth: maxDepth, sizeStrategy: .allocated)
+  }
+
+  public func scan(
+    at url: URL,
+    maxDepth: Int? = nil,
+    sizeStrategy: ScanSizeStrategy
+  ) async throws -> FileNode {
     resetDiagnostics()
     try Task.checkCancellation()
     guard fileManager.fileExists(atPath: url.path) else {
       throw ScanError.notFound(path: url.path)
     }
-    let root = try await scanNode(at: url, depth: 0, maxDepth: maxDepth)
+    let root = try await scanNode(
+      at: url,
+      depth: 0,
+      maxDepth: maxDepth,
+      sizeStrategy: sizeStrategy
+    )
     latestScanDiagnostics = ScanDiagnostics(
       skippedItemCount: skippedItemCount,
       sampledSkippedPaths: sampledSkippedPaths
@@ -79,6 +102,7 @@ public actor DirectoryScanner: FileScanning {
     at url: URL,
     depth: Int,
     maxDepth: Int?,
+    sizeStrategy: ScanSizeStrategy,
     preloadedValues: URLResourceValues? = nil
   ) async throws -> FileNode {
     try Task.checkCancellation()
@@ -96,7 +120,7 @@ public actor DirectoryScanner: FileScanning {
         name: name,
         path: url.path,
         isDirectory: false,
-        sizeBytes: fileSize(from: values)
+        sizeBytes: fileSize(from: values, strategy: sizeStrategy)
       )
     }
 
@@ -105,7 +129,7 @@ public actor DirectoryScanner: FileScanning {
         name: name,
         path: url.path,
         isDirectory: true,
-        sizeBytes: try recursiveDirectorySize(at: url),
+        sizeBytes: try recursiveDirectorySize(at: url, sizeStrategy: sizeStrategy),
         children: []
       )
     }
@@ -149,6 +173,7 @@ public actor DirectoryScanner: FileScanning {
           at: childURL,
           depth: depth + 1,
           maxDepth: maxDepth,
+          sizeStrategy: sizeStrategy,
           preloadedValues: childValues
         )
         children.append(childNode)
@@ -174,7 +199,7 @@ public actor DirectoryScanner: FileScanning {
     )
   }
 
-  private func recursiveDirectorySize(at url: URL) throws -> Int64 {
+  private func recursiveDirectorySize(at url: URL, sizeStrategy: ScanSizeStrategy) throws -> Int64 {
     do {
       try Task.checkCancellation()
       let childURLs = try fileManager.contentsOfDirectory(
@@ -200,7 +225,7 @@ public actor DirectoryScanner: FileScanning {
         }
         if values.isDirectory == true {
           do {
-            total += try recursiveDirectorySize(at: childURL)
+            total += try recursiveDirectorySize(at: childURL, sizeStrategy: sizeStrategy)
           } catch {
             if shouldSkip(error: error) {
               noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
@@ -210,7 +235,7 @@ public actor DirectoryScanner: FileScanning {
           }
           continue
         }
-        total += fileSize(from: values)
+        total += fileSize(from: values, strategy: sizeStrategy)
       }
       return total
     } catch is CancellationError {
@@ -228,14 +253,25 @@ public actor DirectoryScanner: FileScanning {
     }
   }
 
-  private func fileSize(from values: URLResourceValues) -> Int64 {
-    if let fileSize = values.fileSize {
-      return Int64(fileSize)
+  private func fileSize(from values: URLResourceValues, strategy: ScanSizeStrategy) -> Int64 {
+    switch strategy {
+    case .allocated:
+      if let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize {
+        return Int64(allocated)
+      }
+      if let fileSize = values.fileSize {
+        return Int64(fileSize)
+      }
+      return 0
+    case .logical:
+      if let fileSize = values.fileSize {
+        return Int64(fileSize)
+      }
+      if let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize {
+        return Int64(allocated)
+      }
+      return 0
     }
-    if let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize {
-      return Int64(allocated)
-    }
-    return 0
   }
 
   private func shouldSkip(error: Error) -> Bool {
