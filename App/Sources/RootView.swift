@@ -32,7 +32,7 @@ struct RootView: View {
   @AppStorage(PersistedState.fullDiskScanDisclosureAcknowledgedKey) private var hasAcknowledgedDiskScanDisclosure = false
   @State private var showFullDiskScanDisclosure = false
   @State private var treemapDensity: TreemapDensity = .clean
-  @State private var breakdownViewMode: BreakdownViewMode = .treemap
+  @State private var breakdownViewMode: BreakdownViewMode = .radial
   @FocusState private var focusedTarget: FocusTarget?
 
   var body: some View {
@@ -695,10 +695,10 @@ struct RootView: View {
 
         VStack(alignment: .trailing, spacing: 8) {
           Picker("Breakdown View", selection: $breakdownViewMode) {
-            Text("Treemap")
-              .tag(BreakdownViewMode.treemap)
             Text("Radial")
               .tag(BreakdownViewMode.radial)
+            Text("Treemap")
+              .tag(BreakdownViewMode.treemap)
           }
           .pickerStyle(.segmented)
           .labelsHidden()
@@ -765,7 +765,7 @@ struct RootView: View {
         ? "Clean mode shows the biggest areas first."
         : "Detailed mode shows more of the nested folder structure."
     case .radial:
-      return "Radial mode emphasizes hierarchy. The center shows total size; inspect details in the side panel."
+      return "Radial mode shows hierarchy from the center outward. Hover or click slices to inspect nested folders."
     }
   }
 

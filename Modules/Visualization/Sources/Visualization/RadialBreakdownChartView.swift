@@ -21,7 +21,7 @@ public struct RadialBreakdownChartView: View {
     let id: String
     let label: String
     let sizeText: String
-    let color: Color?
+    let symbolName: String
     let isPlaceholder: Bool
     let isMuted: Bool
   }
@@ -98,13 +98,13 @@ public struct RadialBreakdownChartView: View {
 
       Group {
         if isWide {
-          HStack(alignment: .top, spacing: 16) {
+          HStack(alignment: .top, spacing: 14) {
             chartSurface
               .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
-              .overlay(Color.white.opacity(0.12))
-              .padding(.vertical, 10)
+            Rectangle()
+              .fill(Color.white.opacity(0.08))
+              .frame(width: 1)
 
             inspectorPanel
               .frame(width: min(380, geometry.size.width * 0.34), alignment: .topLeading)
@@ -116,7 +116,7 @@ public struct RadialBreakdownChartView: View {
               .frame(height: max(210, geometry.size.height * 0.6))
 
             Divider()
-              .overlay(Color.white.opacity(0.12))
+              .overlay(Color.white.opacity(0.08))
 
             inspectorPanel
           }
@@ -182,27 +182,36 @@ public struct RadialBreakdownChartView: View {
 
     return VStack(alignment: .leading, spacing: 12) {
       Text("Details")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(0.86))
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(Color.primary.opacity(0.82))
 
       selectionSummaryBlock(for: inspectedArc)
-        .frame(height: 82, alignment: .topLeading)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color.white.opacity(0.04))
+            .overlay(
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+            )
+        )
 
       Divider()
-        .overlay(Color.white.opacity(0.12))
+        .overlay(Color.white.opacity(0.08))
 
       Text("Contains")
         .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(0.8))
+        .foregroundStyle(Color.primary.opacity(0.82))
 
-      VStack(spacing: 3) {
+      VStack(spacing: 6) {
         ForEach(rows) { row in
           inspectorRow(row)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(.top, 2)
+    .padding(.top, 0)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
@@ -210,20 +219,20 @@ public struct RadialBreakdownChartView: View {
   private func selectionSummaryBlock(for inspectedArc: RadialBreakdownArc?) -> some View {
     if let inspectedArc {
       let percentage = (Double(inspectedArc.sizeBytes) / Double(max(rootSizeBytes, 1))) * 100
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 8) {
           Circle()
             .fill(baseColor(for: inspectedArc))
-            .frame(width: 9, height: 9)
+            .frame(width: 8, height: 8)
 
           Text(label(for: inspectedArc))
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: 15, weight: .semibold))
             .lineLimit(1)
             .truncationMode(.middle)
         }
 
         Text("\(ByteFormatter.string(from: inspectedArc.sizeBytes)) • \(String(format: "%.1f", percentage))%")
-          .font(.system(size: 12, weight: .medium))
+          .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(Color.primary.opacity(0.78))
           .lineLimit(1)
       }
@@ -248,7 +257,7 @@ public struct RadialBreakdownChartView: View {
           id: "\(inspectedArc.id)-none",
           label: "No contained items",
           sizeText: "",
-          color: nil,
+          symbolName: "tray.fill",
           isPlaceholder: false,
           isMuted: true
         )
@@ -262,7 +271,7 @@ public struct RadialBreakdownChartView: View {
         id: arc.id,
         label: label(for: arc),
         sizeText: ByteFormatter.string(from: arc.sizeBytes),
-        color: baseColor(for: arc),
+        symbolName: symbolName(for: arc),
         isPlaceholder: false,
         isMuted: false
       )
@@ -281,7 +290,7 @@ public struct RadialBreakdownChartView: View {
         id: "placeholder-\(index)",
         label: "",
         sizeText: "",
-        color: nil,
+        symbolName: "circle.fill",
         isPlaceholder: true,
         isMuted: true
       )
@@ -289,10 +298,11 @@ public struct RadialBreakdownChartView: View {
   }
 
   private func inspectorRow(_ row: InspectorRow) -> some View {
-    HStack(spacing: 8) {
-      Circle()
-        .fill(row.color ?? .clear)
-        .frame(width: 8, height: 8)
+    HStack(spacing: 10) {
+      Image(systemName: row.symbolName)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(Color.primary.opacity(row.isMuted ? 0.45 : 0.68))
+        .frame(width: 14, alignment: .center)
 
       Text(row.label)
         .font(.system(size: 11, weight: .medium))
@@ -303,11 +313,21 @@ public struct RadialBreakdownChartView: View {
       Spacer(minLength: 8)
 
       Text(row.sizeText)
-        .font(.system(size: 10, weight: .semibold))
+        .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(Color.primary.opacity(0.72))
         .lineLimit(1)
     }
-    .frame(height: 21)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 6)
+    .frame(minHeight: 30)
+    .background(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .fill(Color.white.opacity(row.isPlaceholder ? 0 : 0.03))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(Color.white.opacity(row.isPlaceholder ? 0 : 0.07), lineWidth: 0.8)
+        )
+    )
     .opacity(row.isPlaceholder ? 0 : 1)
   }
 
@@ -466,21 +486,25 @@ public struct RadialBreakdownChartView: View {
 
   @ViewBuilder
   private func totalBadge(using metrics: ChartMetrics) -> some View {
-    let donutDiameter = min(metrics.donutRadius * 1.72, metrics.chartRadius * 1.36)
+    let donutDiameter = min(metrics.donutRadius * 1.84, metrics.chartRadius * 1.4)
+    let sizeParts = formattedSizeParts(for: rootSizeBytes)
 
     VStack(spacing: 4) {
-      Text(ByteFormatter.string(from: rootSizeBytes))
-        .font(.system(size: 24, weight: .semibold))
+      Text(sizeParts.value)
+        .font(.system(size: 22, weight: .semibold))
         .lineLimit(1)
-        .minimumScaleFactor(0.72)
+        .minimumScaleFactor(0.6)
 
-      Text("Total")
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(Color.primary.opacity(0.76))
-        .lineLimit(1)
+      if let unit = sizeParts.unit {
+        Text(unit)
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(Color.primary.opacity(0.76))
+          .lineLimit(1)
+          .minimumScaleFactor(0.85)
+      }
     }
     .multilineTextAlignment(.center)
-    .padding(.horizontal, 10)
+    .padding(.horizontal, 6)
     .frame(width: donutDiameter, height: donutDiameter)
     .background(.ultraThinMaterial, in: Circle())
     .overlay(
@@ -489,6 +513,52 @@ public struct RadialBreakdownChartView: View {
     )
     .position(metrics.center)
     .allowsHitTesting(false)
+  }
+
+  private func formattedSizeParts(for bytes: Int64) -> (value: String, unit: String?) {
+    let formatted = ByteFormatter.string(from: bytes).trimmingCharacters(in: .whitespacesAndNewlines)
+    let pieces = formatted
+      .components(separatedBy: .whitespacesAndNewlines)
+      .filter { !$0.isEmpty }
+
+    guard pieces.count >= 2 else {
+      return (value: formatted, unit: nil)
+    }
+
+    let unit = pieces.last ?? ""
+    let value = pieces.dropLast().joined(separator: " ")
+    return (value: value, unit: unit.isEmpty ? nil : unit)
+  }
+
+  private func symbolName(for arc: RadialBreakdownArc) -> String {
+    if arc.isAggregate {
+      return "ellipsis.circle.fill"
+    }
+    if arc.isDirectory {
+      return "folder.fill"
+    }
+
+    let pathExtension = URL(fileURLWithPath: arc.path ?? "").pathExtension.lowercased()
+    switch pathExtension {
+    case "zip", "gz", "bz2", "xz", "tar", "rar", "7z", "dmg", "pkg":
+      return "archivebox.fill"
+    case "jpg", "jpeg", "png", "gif", "webp", "svg", "tif", "tiff", "heic":
+      return "photo.fill"
+    case "mp4", "mov", "mkv", "avi", "webm", "m4v":
+      return "film.fill"
+    case "mp3", "wav", "aac", "flac", "m4a":
+      return "music.note"
+    case "swift", "js", "ts", "tsx", "jsx", "py", "rb", "go", "rs", "java", "kt", "c", "h", "cpp", "hpp", "m", "mm", "sh", "zsh":
+      return "chevron.left.forwardslash.chevron.right"
+    case "md", "txt", "json", "yaml", "yml", "toml", "xml", "csv", "log":
+      return "doc.text.fill"
+    default:
+      let fileName = URL(fileURLWithPath: arc.path ?? "").lastPathComponent.lowercased()
+      if fileName.contains("lock") {
+        return "lock.fill"
+      }
+      return "doc.fill"
+    }
   }
 
   private func label(for arc: RadialBreakdownArc) -> String {
