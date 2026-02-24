@@ -5,6 +5,21 @@ import SwiftUI
 import Visualization
 
 struct RootView: View {
+  private enum ResultsLayoutVariant: Hashable {
+    case twoColumn
+    case singleColumn
+  }
+
+  private struct DistributionSectionHeightsPreferenceKey: PreferenceKey {
+    static var defaultValue: [ResultsLayoutVariant: CGFloat] = [:]
+
+    static func reduce(value: inout [ResultsLayoutVariant: CGFloat], nextValue: () -> [ResultsLayoutVariant: CGFloat]) {
+      value.merge(nextValue()) { current, next in
+        max(current, next)
+      }
+    }
+  }
+
   private enum FocusTarget: Hashable {
     case folderScanStartButton
   }
@@ -33,6 +48,7 @@ struct RootView: View {
   @State private var showFullDiskScanDisclosure = false
   @State private var treemapDensity: TreemapDensity = .clean
   @State private var breakdownViewMode: BreakdownViewMode = .radial
+  @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
   @FocusState private var focusedTarget: FocusTarget?
 
   var body: some View {
@@ -654,7 +670,7 @@ struct RootView: View {
       steps: [
         "Finding files and folders",
         "Calculating folder sizes",
-        "Building Top Items and insights"
+        "Building Top Items"
       ]
     )
   }
@@ -662,19 +678,44 @@ struct RootView: View {
   private func resultsContent(rootNode: FileNode) -> some View {
     ViewThatFits(in: .horizontal) {
       HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-        distributionSection(rootNode: rootNode, chartHeight: Layout.chartPreferredHeightTwoColumn)
-        supplementalResultsSections(rootNode: rootNode, useFixedWidth: true)
+        distributionSection(
+          rootNode: rootNode,
+          chartHeight: Layout.chartPreferredHeightTwoColumn,
+          layoutVariant: .twoColumn
+        )
+        supplementalResultsSections(
+          rootNode: rootNode,
+          useFixedWidth: true,
+          targetHeight: distributionSectionHeights[.twoColumn] ?? 0
+        )
       }
 
       VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-        distributionSection(rootNode: rootNode, chartHeight: Layout.chartPreferredHeightSingleColumn)
-        supplementalResultsSections(rootNode: rootNode, useFixedWidth: false)
+        distributionSection(
+          rootNode: rootNode,
+          chartHeight: Layout.chartPreferredHeightSingleColumn,
+          layoutVariant: .singleColumn
+        )
+        supplementalResultsSections(
+          rootNode: rootNode,
+          useFixedWidth: false,
+          targetHeight: distributionSectionHeights[.singleColumn] ?? 0
+        )
+      }
+    }
+    .onPreferenceChange(DistributionSectionHeightsPreferenceKey.self) { heights in
+      distributionSectionHeights.merge(heights) { current, next in
+        max(current, next)
       }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
   }
 
-  private func distributionSection(rootNode: FileNode, chartHeight: CGFloat) -> some View {
+  private func distributionSection(
+    rootNode: FileNode,
+    chartHeight: CGFloat,
+    layoutVariant: ResultsLayoutVariant
+  ) -> some View {
     let clampedChartHeight = min(max(chartHeight, Layout.chartMinHeight), Layout.chartMaxHeight)
     let effectiveChartHeight = breakdownViewMode == .radial
       ? min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
@@ -756,6 +797,14 @@ struct RootView: View {
     .padding(16)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .lunarPanelBackground()
+    .background(
+      GeometryReader { proxy in
+        Color.clear.preference(
+          key: DistributionSectionHeightsPreferenceKey.self,
+          value: [layoutVariant: proxy.size.height]
+        )
+      }
+    )
   }
 
   private var breakdownHelperText: String {
@@ -778,11 +827,16 @@ struct RootView: View {
     }
   }
 
-  private func supplementalResultsSections(rootNode: FileNode, useFixedWidth: Bool) -> some View {
-    let sections = VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-      TopItemsPanel(rootNode: rootNode, onRevealInFinder: revealInFinder(path:))
-      insightsSection
-    }
+  private func supplementalResultsSections(
+    rootNode: FileNode,
+    useFixedWidth: Bool,
+    targetHeight: CGFloat
+  ) -> some View {
+    let sections = TopItemsPanel(
+      rootNode: rootNode,
+      onRevealInFinder: revealInFinder(path:),
+      targetHeight: targetHeight
+    )
     .frame(maxWidth: .infinity, alignment: .topLeading)
 
     return Group {
@@ -804,39 +858,6 @@ struct RootView: View {
       return node.path
     }
     return node.name
-  }
-
-  private var insightsSection: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text("Insights")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      if model.insights.isEmpty {
-        Text("No insights yet for this scan.")
-          .font(AppTheme.Typography.body)
-          .foregroundStyle(AppTheme.Colors.textTertiary)
-      } else {
-        VStack(alignment: .leading, spacing: 10) {
-          ForEach(model.insights) { insight in
-            HStack(alignment: .top, spacing: 8) {
-              Image(systemName: insight.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-
-              Text(insight.message)
-                .font(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-          }
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .lunarPanelBackground()
   }
 
   private func chooseFolder() {

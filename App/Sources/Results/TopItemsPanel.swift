@@ -207,8 +207,19 @@ private struct RootSignature: Equatable {
 struct TopItemsPanel: View {
   let rootNode: FileNode
   let onRevealInFinder: (String) -> Void
+  let targetHeight: CGFloat
 
   @StateObject private var store = TopConsumersStore()
+
+  init(
+    rootNode: FileNode,
+    onRevealInFinder: @escaping (String) -> Void,
+    targetHeight: CGFloat = 0
+  ) {
+    self.rootNode = rootNode
+    self.onRevealInFinder = onRevealInFinder
+    self.targetHeight = targetHeight
+  }
 
   var body: some View {
     let entries = store.visibleEntries()
@@ -247,12 +258,20 @@ struct TopItemsPanel: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 300, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 180, maxHeight: .infinity, alignment: .topLeading)
         .animation(nil, value: store.mode)
       }
+
+      Spacer(minLength: 0)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: targetHeight > 0 ? targetHeight : nil,
+      maxHeight: targetHeight > 0 ? targetHeight : nil,
+      alignment: .topLeading
+    )
     .frame(maxWidth: .infinity, alignment: .leading)
     .lunarPanelBackground()
     .onAppear {
