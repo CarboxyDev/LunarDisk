@@ -70,7 +70,8 @@ struct RootView: View {
         onScanMacintoshHD: startMacintoshHDScanFlow,
         onChooseFolder: chooseFolder,
         onStartFolderScan: startFolderScan,
-        onOpenFullDiskAccess: openFullDiskAccessSettings
+        onOpenFullDiskAccess: openFullDiskAccessSettings,
+        onRevealInFinder: revealInFinder(path:)
       )
       .transition(
         .asymmetric(

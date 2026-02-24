@@ -81,7 +81,13 @@ enum AppTheme {
     static let heroSubtitle = Font.system(size: 14, weight: .regular, design: .default)
     static let cardTitle = Font.system(size: 24, weight: .semibold, design: .default)
     static let cardSubtitle = Font.system(size: 15, weight: .regular, design: .default)
+    static let cardHeader = Font.system(size: 18, weight: .semibold, design: .default)
+    static let sectionHeader = Font.system(size: 16, weight: .semibold, design: .default)
     static let body = Font.system(size: 14, weight: .regular, design: .default)
+    static let caption = Font.system(size: 12, weight: .regular, design: .default)
+    static let captionStrong = Font.system(size: 12, weight: .semibold, design: .default)
+    static let micro = Font.system(size: 11, weight: .regular, design: .default)
+    static let microStrong = Font.system(size: 11, weight: .semibold, design: .default)
     static let button = Font.system(size: 13, weight: .semibold, design: .default)
   }
 
