@@ -1,4 +1,5 @@
 import CoreScan
+import LunardiskAI
 import SwiftUI
 import Visualization
 
@@ -6,6 +7,36 @@ struct ScanSessionView: View {
   private enum ResultsLayoutVariant: Hashable {
     case twoColumn
     case singleColumn
+  }
+
+  private enum SessionSection: String, CaseIterable, Identifiable {
+    case overview
+    case insights
+    case actions
+
+    var id: String { rawValue }
+
+    var title: String {
+      switch self {
+      case .overview:
+        return "Overview"
+      case .insights:
+        return "Insights"
+      case .actions:
+        return "Actions"
+      }
+    }
+
+    var icon: String {
+      switch self {
+      case .overview:
+        return "chart.pie"
+      case .insights:
+        return "lightbulb"
+      case .actions:
+        return "checkmark.circle"
+      }
+    }
   }
 
   private struct DistributionSectionHeightsPreferenceKey: PreferenceKey {
@@ -43,6 +74,7 @@ struct ScanSessionView: View {
 
   let selectedURL: URL?
   let rootNode: FileNode?
+  let insights: [Insight]
   let isScanning: Bool
   let warningMessage: String?
   let failure: AppModel.ScanFailure?
@@ -56,6 +88,10 @@ struct ScanSessionView: View {
   @State private var treemapDensity: TreemapDensity = .clean
   @State private var breakdownViewMode: BreakdownViewMode = .radial
   @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
+  @State private var selectedSection: SessionSection = .overview
+  @State private var revealHeader = false
+  @State private var revealBody = false
+  @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
     if isScanning {
@@ -83,9 +119,21 @@ struct ScanSessionView: View {
     }
   }
 
+  private var sectionID: String {
+    "\(phaseID)-\(selectedSection.rawValue)"
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
       sessionHeader
+        .opacity(revealHeader ? 1 : 0)
+        .offset(y: revealHeader ? 0 : 12)
+
+      if rootNode != nil {
+        sessionSectionPicker
+          .opacity(revealBody ? 1 : 0)
+          .offset(y: revealBody ? 0 : 10)
+      }
 
       Group {
         switch phase {
@@ -96,27 +144,38 @@ struct ScanSessionView: View {
           loadingState
 
         case let .results(rootNode):
-          VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-            if let warningMessage {
-              partialScanBanner(warningMessage)
-            }
-            resultsContent(rootNode: rootNode)
-          }
+          resultsPhaseContent(rootNode: rootNode)
 
         case let .failure(failure):
           failurePanel(failure)
         }
       }
-      .id(phaseID)
+      .id(sectionID)
       .transition(
         .asymmetric(
           insertion: .opacity.combined(with: .move(edge: .trailing)),
           removal: .opacity.combined(with: .move(edge: .leading))
         )
       )
+      .opacity(revealBody ? 1 : 0)
+      .offset(y: revealBody ? 0 : 10)
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .animation(.spring(response: 0.38, dampingFraction: 0.9), value: phaseID)
+    .animation(.easeInOut(duration: 0.2), value: selectedSection)
+    .onAppear {
+      animateEntranceIfNeeded()
+    }
+    .onChange(of: isScanning) { _, scanning in
+      if scanning {
+        selectedSection = .overview
+      }
+    }
+    .onChange(of: rootNode?.id) { _, newRootID in
+      if newRootID == nil {
+        selectedSection = .overview
+      }
+    }
   }
 
   private var sessionHeader: some View {
@@ -181,6 +240,57 @@ struct ScanSessionView: View {
     .lunarPanelBackground()
   }
 
+  private var sessionSectionPicker: some View {
+    HStack(spacing: 8) {
+      ForEach(SessionSection.allCases) { section in
+        sessionSectionButton(section)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func sessionSectionButton(_ section: SessionSection) -> some View {
+    let isSelected = section == selectedSection
+
+    return Button {
+      withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+        selectedSection = section
+      }
+    } label: {
+      Label(section.title, systemImage: section.icon)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(isSelected ? AppTheme.Colors.accentForeground : AppTheme.Colors.textSecondary)
+        .lineLimit(1)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(minWidth: 86)
+        .background {
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(
+              isSelected
+                ? AppTheme.Colors.accent
+                : AppTheme.Colors.surfaceElevated.opacity(0.62)
+            )
+            .overlay(
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                  isSelected
+                    ? AppTheme.Colors.accent.opacity(0.85)
+                    : AppTheme.Colors.cardBorder,
+                  lineWidth: 1
+                )
+            )
+            .matchedGeometryEffect(
+              id: isSelected ? "session-section-selection" : section.rawValue,
+              in: sectionTabSelectionNamespace
+            )
+        }
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(section.title)
+    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+  }
+
   private var sessionTitle: String {
     switch phase {
     case .idle:
@@ -201,7 +311,7 @@ struct ScanSessionView: View {
     case .scanning:
       return "Reading metadata and calculating folder sizes locally on your Mac."
     case .results:
-      return "Use chart + top items to identify cleanup targets quickly."
+      return "Use overview, insights, and actions to move from diagnosis to cleanup."
     case .failure:
       return "Review the issue and rerun with adjusted permissions or a new target."
     }
@@ -331,6 +441,144 @@ struct ScanSessionView: View {
         "Calculating folder sizes",
         "Building Top Items"
       ]
+    )
+  }
+
+  @ViewBuilder
+  private func resultsPhaseContent(rootNode: FileNode) -> some View {
+    switch selectedSection {
+    case .overview:
+      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+        if let warningMessage {
+          partialScanBanner(warningMessage)
+        }
+        resultsContent(rootNode: rootNode)
+      }
+
+    case .insights:
+      insightsPanel
+
+    case .actions:
+      actionsPanel(rootNode: rootNode)
+    }
+  }
+
+  private var insightsPanel: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Insights")
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+
+      Text("Auto-generated guidance from scan heuristics. Useful for quick prioritization before manual cleanup.")
+        .font(.system(size: 12, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
+
+      if insights.isEmpty {
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+
+          Text("Insights are still being generated.")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+        }
+      } else {
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(insights) { insight in
+            insightRow(insight)
+          }
+        }
+      }
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .lunarPanelBackground()
+  }
+
+  private func insightRow(_ insight: Insight) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: insight.severity == .warning ? "exclamationmark.triangle.fill" : "lightbulb.fill")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(insight.severity == .warning ? AppTheme.Colors.statusWarningForeground : AppTheme.Colors.textSecondary)
+        .padding(.top, 2)
+
+      Text(insight.message)
+        .font(.system(size: 13, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
+        .overlay(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
+        )
+    )
+  }
+
+  private func actionsPanel(rootNode: FileNode) -> some View {
+    let candidates = Array(rootNode.sortedChildrenBySize.prefix(5))
+
+    return VStack(alignment: .leading, spacing: 12) {
+      Text("Actions")
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+
+      Text("Focused next moves based on biggest direct consumers. This section is intentionally lightweight and will evolve into guided cleanup workflows.")
+        .font(.system(size: 12, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
+
+      if candidates.isEmpty {
+        Text("No actionable items found for this target.")
+          .font(.system(size: 13, weight: .regular))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+      } else {
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(candidates, id: \.id) { node in
+            actionRow(for: node)
+          }
+        }
+      }
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .lunarPanelBackground()
+  }
+
+  private func actionRow(for node: FileNode) -> some View {
+    HStack(spacing: 10) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(node.name.isEmpty ? node.path : node.name)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+          .lineLimit(1)
+
+        Text(ByteFormatter.string(from: node.sizeBytes))
+          .font(.system(size: 12, weight: .regular))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+      }
+
+      Spacer(minLength: 0)
+
+      Button("Reveal in Finder") {
+        onRevealInFinder(node.path)
+      }
+      .buttonStyle(LunarSecondaryButtonStyle())
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
+        .overlay(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
+        )
     )
   }
 
@@ -623,5 +871,15 @@ struct ScanSessionView: View {
       return node.path
     }
     return node.name
+  }
+
+  private func animateEntranceIfNeeded() {
+    guard !revealHeader, !revealBody else { return }
+
+    Task { @MainActor in
+      revealHeader = true
+      try? await Task.sleep(nanoseconds: 100_000_000)
+      revealBody = true
+    }
   }
 }

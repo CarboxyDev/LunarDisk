@@ -83,6 +83,7 @@ struct RootView: View {
       ScanSessionView(
         selectedURL: model.selectedURL,
         rootNode: model.rootNode,
+        insights: model.insights,
         isScanning: model.isScanning,
         warningMessage: model.scanWarningMessage,
         failure: model.lastFailure,

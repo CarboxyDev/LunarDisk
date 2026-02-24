@@ -9,36 +9,58 @@ struct ScanSetupView: View {
   let onStartFolderScan: () -> Void
   let onOpenFullDiskAccess: () -> Void
 
-  @State private var hasAppeared = false
+  @State private var revealHeader = false
+  @State private var revealPrimaryCard = false
+  @State private var revealSecondaryStack = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       setupHeader
+        .opacity(revealHeader ? 1 : 0)
+        .offset(y: revealHeader ? 0 : 14)
 
       if let failure = lastFailure {
         failureBanner(failure)
+          .opacity(revealHeader ? 1 : 0)
+          .offset(y: revealHeader ? 0 : 10)
       }
 
       ViewThatFits(in: .horizontal) {
         HStack(alignment: .top, spacing: 16) {
-          scanInputsCard
-          trustCard
-            .frame(width: 360, alignment: .topLeading)
+          folderScanPrimaryCard
+            .opacity(revealPrimaryCard ? 1 : 0)
+            .offset(y: revealPrimaryCard ? 0 : 12)
+
+          VStack(alignment: .leading, spacing: 16) {
+            fullDiskCard
+            trustCard
+          }
+          .frame(width: 360, alignment: .topLeading)
+          .opacity(revealSecondaryStack ? 1 : 0)
+          .offset(y: revealSecondaryStack ? 0 : 12)
         }
 
         VStack(alignment: .leading, spacing: 16) {
-          scanInputsCard
+          folderScanPrimaryCard
+            .opacity(revealPrimaryCard ? 1 : 0)
+            .offset(y: revealPrimaryCard ? 0 : 12)
+
+          fullDiskCard
+            .opacity(revealSecondaryStack ? 1 : 0)
+            .offset(y: revealSecondaryStack ? 0 : 12)
+
           trustCard
+            .opacity(revealSecondaryStack ? 1 : 0)
+            .offset(y: revealSecondaryStack ? 0 : 12)
         }
       }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
-    .opacity(hasAppeared ? 1 : 0)
-    .offset(y: hasAppeared ? 0 : 12)
+    .animation(.spring(response: 0.44, dampingFraction: 0.88), value: revealHeader)
+    .animation(.spring(response: 0.44, dampingFraction: 0.88), value: revealPrimaryCard)
+    .animation(.spring(response: 0.44, dampingFraction: 0.88), value: revealSecondaryStack)
     .onAppear {
-      withAnimation(.spring(response: 0.44, dampingFraction: 0.88)) {
-        hasAppeared = true
-      }
+      animateEntranceIfNeeded()
     }
   }
 
@@ -48,7 +70,7 @@ struct ScanSetupView: View {
         .font(AppTheme.Typography.heroTitle)
         .foregroundStyle(AppTheme.Colors.textPrimary)
 
-      Text("Choose full-disk for global cleanup or pick a folder for a focused pass. Everything stays local.")
+      Text("Folder scan is fastest for iterative cleanup. Full-disk scan is available when you need complete system coverage.")
         .font(AppTheme.Typography.body)
         .foregroundStyle(AppTheme.Colors.textTertiary)
     }
@@ -57,65 +79,102 @@ struct ScanSetupView: View {
     .lunarPanelBackground()
   }
 
-  private var scanInputsCard: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Scan Target")
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
+  private var folderScanPrimaryCard: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(alignment: .center, spacing: 10) {
+        Image(systemName: "folder.fill.badge.gearshape")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
 
-      scanModeRow(
-        icon: "internaldrive.fill",
-        title: "Full-Disk Scan",
-        message: "Best for finding hidden storage pressure across your Mac.",
-        controls: {
-          Button("Scan Macintosh HD") {
-            onScanMacintoshHD()
+        Text("Folder Scan")
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+
+        Text("Recommended")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.accentForeground)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(
+            Capsule(style: .continuous)
+              .fill(AppTheme.Colors.accent)
+          )
+      }
+
+      Text("Use this for fast, focused scans on Downloads, project directories, or any area you are actively cleaning.")
+        .font(AppTheme.Typography.body)
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      HStack(spacing: 10) {
+        if selectedFolderPath == nil {
+          Button {
+            onChooseFolder()
+          } label: {
+            Label("Choose Folder…", systemImage: "folder.badge.plus")
           }
           .buttonStyle(LunarPrimaryButtonStyle())
-        }
-      )
-
-      Divider()
-        .overlay(AppTheme.Colors.divider)
-        .frame(height: AppTheme.Metrics.dividerHeight)
-
-      scanModeRow(
-        icon: "folder.fill.badge.gearshape",
-        title: "Folder Scan",
-        message: "Best for focused checks on project folders or Downloads.",
-        controls: {
-          HStack(spacing: 10) {
-            if selectedFolderPath == nil {
-              Button {
-                onChooseFolder()
-              } label: {
-                Label("Choose Folder…", systemImage: "folder.badge.plus")
-              }
-              .buttonStyle(LunarPrimaryButtonStyle())
-              .keyboardShortcut("o", modifiers: [.command])
-            } else {
-              Button {
-                onChooseFolder()
-              } label: {
-                Label("Choose Folder…", systemImage: "folder.badge.plus")
-              }
-              .buttonStyle(LunarSecondaryButtonStyle())
-              .keyboardShortcut("o", modifiers: [.command])
-            }
-
-            Button("Start Folder Scan") {
-              onStartFolderScan()
-            }
-            .buttonStyle(LunarPrimaryButtonStyle())
-            .disabled(!canStartFolderScan)
-            .keyboardShortcut(.defaultAction)
+          .keyboardShortcut("o", modifiers: [.command])
+        } else {
+          Button {
+            onChooseFolder()
+          } label: {
+            Label("Change Folder…", systemImage: "folder.badge.plus")
           }
-
-          selectedFolderPathSlot
+          .buttonStyle(LunarSecondaryButtonStyle())
+          .keyboardShortcut("o", modifiers: [.command])
         }
-      )
+
+        Button("Start Folder Scan") {
+          onStartFolderScan()
+        }
+        .buttonStyle(LunarPrimaryButtonStyle())
+        .disabled(!canStartFolderScan)
+        .keyboardShortcut(.defaultAction)
+      }
+
+      selectedFolderPathSlot
     }
     .padding(18)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .background(
+      RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
+        .fill(AppTheme.Colors.surface)
+        .overlay(
+          RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
+            .stroke(AppTheme.Colors.accent.opacity(0.55), lineWidth: 1.1)
+        )
+        .shadow(color: AppTheme.Colors.shadow, radius: 16, x: 0, y: 8)
+    )
+  }
+
+  private var fullDiskCard: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 8) {
+        Image(systemName: "internaldrive.fill")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Text("Full-Disk Scan")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+      }
+
+      Text("Use when you need complete device-level breakdown. This usually takes longer than a folder scan.")
+        .font(.system(size: 12, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      HStack(spacing: 10) {
+        Button("Scan Macintosh HD") {
+          onScanMacintoshHD()
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+
+        Spacer(minLength: 0)
+      }
+    }
+    .padding(16)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .lunarPanelBackground()
   }
@@ -149,32 +208,6 @@ struct ScanSetupView: View {
     .padding(18)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .lunarPanelBackground()
-  }
-
-  private func scanModeRow<Controls: View>(
-    icon: String,
-    title: String,
-    message: String,
-    @ViewBuilder controls: () -> Controls
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Image(systemName: icon)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-
-        Text(title)
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textPrimary)
-      }
-
-      Text(message)
-        .font(.system(size: 12, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      controls()
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
   }
 
   private var selectedFolderPathSlot: some View {
@@ -216,6 +249,18 @@ struct ScanSetupView: View {
         .font(.system(size: 12, weight: .regular))
         .foregroundStyle(AppTheme.Colors.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private func animateEntranceIfNeeded() {
+    guard !revealHeader, !revealPrimaryCard, !revealSecondaryStack else { return }
+
+    Task { @MainActor in
+      revealHeader = true
+      try? await Task.sleep(nanoseconds: 90_000_000)
+      revealPrimaryCard = true
+      try? await Task.sleep(nanoseconds: 90_000_000)
+      revealSecondaryStack = true
     }
   }
 
