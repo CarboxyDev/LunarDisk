@@ -225,11 +225,16 @@ struct TopItemsPanel: View {
     let entries = store.visibleEntries()
 
     VStack(alignment: .leading, spacing: 10) {
-      Text("Top Items")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text("Top Items")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
 
-      topItemsModePicker
+        Spacer(minLength: 8)
+
+        topItemsModePicker
+          .frame(maxWidth: 252, alignment: .trailing)
+      }
 
       Text(store.mode.helperText)
         .font(.system(size: 11, weight: .regular))
@@ -291,20 +296,25 @@ struct TopItemsPanel: View {
 
   private var topItemsModePicker: some View {
     ViewThatFits(in: .horizontal) {
-      modePicker(useShortLabels: false)
-      modePicker(useShortLabels: true)
+      modeSelector(useShortLabels: false)
+      modeSelector(useShortLabels: true)
     }
   }
 
-  private func modePicker(useShortLabels: Bool) -> some View {
-    Picker("Top Items Scope", selection: $store.mode) {
-      Text(useShortLabels ? TopConsumersMode.directChildren.shortTitle : TopConsumersMode.directChildren.longTitle)
-        .tag(TopConsumersMode.directChildren)
-      Text(useShortLabels ? TopConsumersMode.deepestConsumers.shortTitle : TopConsumersMode.deepestConsumers.longTitle)
-        .tag(TopConsumersMode.deepestConsumers)
-    }
-    .pickerStyle(.segmented)
-    .labelsHidden()
+  private func modeSelector(useShortLabels: Bool) -> some View {
+    LunarSegmentedControl(
+      options: [
+        LunarSegmentedControlOption(
+          useShortLabels ? TopConsumersMode.directChildren.shortTitle : TopConsumersMode.directChildren.longTitle,
+          value: TopConsumersMode.directChildren
+        ),
+        LunarSegmentedControlOption(
+          useShortLabels ? TopConsumersMode.deepestConsumers.shortTitle : TopConsumersMode.deepestConsumers.longTitle,
+          value: TopConsumersMode.deepestConsumers
+        )
+      ],
+      selection: $store.mode
+    )
   }
 }
 

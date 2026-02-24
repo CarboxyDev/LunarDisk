@@ -742,7 +742,7 @@ struct ScanSessionView: View {
       : clampedChartHeight
 
     return VStack(alignment: .leading, spacing: 12) {
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
+      HStack(alignment: .top, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
           Text("Storage Breakdown")
             .font(.system(size: 14, weight: .semibold))
@@ -755,27 +755,7 @@ struct ScanSessionView: View {
         Spacer()
 
         VStack(alignment: .trailing, spacing: 8) {
-          Picker("Breakdown View", selection: $breakdownViewMode) {
-            Text("Radial")
-              .tag(BreakdownViewMode.radial)
-            Text("Treemap")
-              .tag(BreakdownViewMode.treemap)
-          }
-          .pickerStyle(.segmented)
-          .labelsHidden()
-          .frame(width: 206)
-
-          if breakdownViewMode == .treemap {
-            Picker("Treemap Density", selection: $treemapDensity) {
-              Text("Clean")
-                .tag(TreemapDensity.clean)
-              Text("Detailed")
-                .tag(TreemapDensity.detailed)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 186)
-          }
+          breakdownModeSelector
 
           Text(ByteFormatter.string(from: rootNode.sizeBytes))
             .font(.system(size: 13, weight: .semibold))
@@ -783,26 +763,41 @@ struct ScanSessionView: View {
         }
       }
 
-      Text(breakdownHelperText)
-        .font(.system(size: 11, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
+      HStack(alignment: .center, spacing: 10) {
+        Text(breakdownHelperText)
+          .font(.system(size: 11, weight: .regular))
+          .foregroundStyle(AppTheme.Colors.textTertiary)
+          .frame(maxWidth: .infinity, alignment: .leading)
 
-      Group {
+        if breakdownViewMode == .treemap {
+          treemapDensityControl
+            .transition(.opacity.combined(with: .move(edge: .trailing)))
+        }
+      }
+      .animation(.easeInOut(duration: 0.2), value: breakdownViewMode)
+
+      ZStack {
         if breakdownViewMode == .treemap {
           TreemapChartView(
             root: rootNode,
             palette: AppTheme.Colors.chartPalette,
             density: treemapDensity
           )
+          .id("treemap-\(treemapDensity.rawValue)")
+          .transition(.opacity.combined(with: .scale(scale: 0.985)))
         } else {
           RadialBreakdownChartView(
             root: rootNode,
             palette: AppTheme.Colors.chartPalette
           )
+          .id("radial")
+          .transition(.opacity.combined(with: .scale(scale: 0.985)))
         }
       }
       .frame(maxWidth: .infinity)
       .frame(height: effectiveChartHeight)
+      .animation(.easeInOut(duration: 0.22), value: breakdownViewMode)
+      .animation(.easeInOut(duration: 0.16), value: treemapDensity)
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
           .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
@@ -827,11 +822,44 @@ struct ScanSessionView: View {
     )
   }
 
+  private var breakdownModeSelector: some View {
+    LunarSegmentedControl(
+      options: [
+        LunarSegmentedControlOption("Radial", value: BreakdownViewMode.radial, systemImage: "chart.pie.fill"),
+        LunarSegmentedControlOption("Treemap", value: BreakdownViewMode.treemap, systemImage: "square.grid.2x2.fill")
+      ],
+      selection: $breakdownViewMode,
+      minItemWidth: 96
+    )
+    .frame(width: 248)
+  }
+
+  private var treemapDensityControl: some View {
+    HStack(spacing: 8) {
+      Text("Density")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+
+      LunarSegmentedControl(
+        options: [
+          LunarSegmentedControlOption("Simple", value: TreemapDensity.clean),
+          LunarSegmentedControlOption("Detailed", value: TreemapDensity.detailed)
+        ],
+        selection: $treemapDensity,
+        minItemWidth: 68,
+        horizontalPadding: 10,
+        verticalPadding: 6
+      )
+      .frame(width: 182)
+    }
+    .padding(.vertical, 2)
+  }
+
   private var breakdownHelperText: String {
     switch breakdownViewMode {
     case .treemap:
       return treemapDensity == .clean
-        ? "Clean mode shows the biggest areas first."
+        ? "Simple mode shows the biggest areas first."
         : "Detailed mode shows more of the nested folder structure."
     case .radial:
       return "Radial mode shows hierarchy from the center outward. Hover or click slices to inspect nested folders."
