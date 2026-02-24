@@ -4,10 +4,24 @@ import SwiftUI
 
 public struct SunburstChartView: View {
   private static let ringInset: CGFloat = 1
+  private static let defaultPalette: [Color] = [
+    Color(red: 138 / 255, green: 121 / 255, blue: 171 / 255),
+    Color(red: 230 / 255, green: 165 / 255, blue: 184 / 255),
+    Color(red: 119 / 255, green: 184 / 255, blue: 161 / 255),
+    Color(red: 240 / 255, green: 200 / 255, blue: 141 / 255),
+    Color(red: 160 / 255, green: 187 / 255, blue: 227 / 255),
+  ]
+
   private let segments: [SunburstSegment]
+  private let palette: [Color]
 
   public init(root: FileNode) {
-    segments = SunburstLayout.makeSegments(from: root)
+    self.init(root: root, palette: Self.defaultPalette)
+  }
+
+  public init(root: FileNode, palette: [Color]) {
+    self.segments = SunburstLayout.makeSegments(from: root)
+    self.palette = palette.isEmpty ? Self.defaultPalette : palette
   }
 
   public var body: some View {
@@ -47,8 +61,8 @@ public struct SunburstChartView: View {
   }
 
   private func color(for segment: SunburstSegment) -> Color {
-    let hue = Double(abs(segment.id.hashValue % 360)) / 360
-    let saturation = min(0.55 + (Double(segment.depth % 4) * 0.08), 0.9)
-    return Color(hue: hue, saturation: saturation, brightness: 0.88)
+    let colorIndex = (abs(segment.id.hashValue) + segment.depth) % palette.count
+    let opacity = max(0.62, 0.95 - (Double(segment.depth % 6) * 0.06))
+    return palette[colorIndex].opacity(opacity)
   }
 }

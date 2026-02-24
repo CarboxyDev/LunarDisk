@@ -56,8 +56,8 @@ struct RootView: View {
       .overlay {
         LinearGradient(
           colors: [
-            AppTheme.Colors.surfaceElevated.opacity(0.3),
-            AppTheme.Colors.background.opacity(0.9)
+            AppTheme.Colors.appBackgroundGradientStart,
+            AppTheme.Colors.appBackgroundGradientEnd
           ],
           startPoint: .topLeading,
           endPoint: .bottomTrailing
@@ -157,7 +157,7 @@ struct RootView: View {
         title: "Scanning",
         icon: "waveform.path.ecg",
         foreground: AppTheme.Colors.textPrimary,
-        background: AppTheme.Colors.surfaceElevated.opacity(0.8),
+        background: AppTheme.Colors.statusScanningBackground,
         border: AppTheme.Colors.cardBorder,
         shouldShimmer: true
       )
@@ -167,9 +167,9 @@ struct RootView: View {
       return (
         title: "Scan Complete",
         icon: "checkmark.seal.fill",
-        foreground: Color(red: 0.80, green: 0.95, blue: 0.83),
-        background: Color(red: 0.12, green: 0.22, blue: 0.15),
-        border: Color(red: 0.33, green: 0.54, blue: 0.39),
+        foreground: AppTheme.Colors.statusSuccessForeground,
+        background: AppTheme.Colors.statusSuccessBackground,
+        border: AppTheme.Colors.statusSuccessBorder,
         shouldShimmer: false
       )
     }
@@ -178,9 +178,9 @@ struct RootView: View {
       return (
         title: "Needs Attention",
         icon: "exclamationmark.triangle.fill",
-        foreground: Color(red: 0.98, green: 0.86, blue: 0.66),
-        background: Color(red: 0.25, green: 0.18, blue: 0.11),
-        border: Color(red: 0.56, green: 0.40, blue: 0.24),
+        foreground: AppTheme.Colors.statusWarningForeground,
+        background: AppTheme.Colors.statusWarningBackground,
+        border: AppTheme.Colors.statusWarningBorder,
         shouldShimmer: false
       )
     }
@@ -189,7 +189,7 @@ struct RootView: View {
       title: "Idle",
       icon: "circle.fill",
       foreground: AppTheme.Colors.textSecondary,
-      background: AppTheme.Colors.surfaceElevated.opacity(0.7),
+      background: AppTheme.Colors.statusIdleBackground,
       border: AppTheme.Colors.cardBorder,
       shouldShimmer: false
     )
@@ -212,7 +212,7 @@ struct RootView: View {
     .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
     .background(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.55))
+        .fill(AppTheme.Colors.targetBannerBackground)
         .overlay(
           RoundedRectangle(cornerRadius: 10, style: .continuous)
             .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
@@ -385,7 +385,7 @@ struct RootView: View {
         .frame(width: 22, height: 22)
         .background(
           Circle()
-            .fill(AppTheme.Colors.accent.opacity(0.95))
+            .fill(AppTheme.Colors.permissionStepBadgeBackground)
         )
 
       Text(text)
@@ -433,7 +433,7 @@ struct RootView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
       RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.75))
+        .fill(AppTheme.Colors.failureBannerBackground)
         .overlay(
           RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
             .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
@@ -512,7 +512,7 @@ struct RootView: View {
         .font(.system(size: 14, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textSecondary)
 
-      SunburstChartView(root: rootNode)
+      SunburstChartView(root: rootNode, palette: AppTheme.Colors.chartPalette)
         .frame(width: chartSize, height: chartSize)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -671,7 +671,7 @@ struct RootView: View {
               .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
           )
           .frame(width: 88, height: 88)
-          .shadow(color: AppTheme.Colors.shadow.opacity(0.7), radius: 18, x: 0, y: 8)
+          .shadow(color: AppTheme.Colors.sheetIconShadow, radius: 18, x: 0, y: 8)
 
         Image(systemName: "info.circle.fill")
           .font(.system(size: 40, weight: .semibold))
@@ -698,7 +698,7 @@ struct RootView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .fill(AppTheme.Colors.surfaceElevated.opacity(0.55))
+          .fill(AppTheme.Colors.disclosureCalloutBackground)
           .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
               .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
@@ -828,7 +828,7 @@ private struct ScanningStatePanel: View {
   private func loadingRow(width: CGFloat) -> some View {
     GeometryReader { proxy in
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.7))
+        .fill(AppTheme.Colors.scanningSkeleton)
         .frame(width: proxy.size.width * width, height: 10)
         .lunarShimmer(active: true)
     }
@@ -842,13 +842,13 @@ private struct AnimatedScanGlyph: View {
   var body: some View {
     ZStack {
       Circle()
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.45))
+        .fill(AppTheme.Colors.scanningGlyphBackground)
         .frame(width: 70, height: 70)
 
       Circle()
         .trim(from: 0.16, to: 0.96)
         .stroke(
-          AppTheme.Colors.textSecondary.opacity(0.9),
+          AppTheme.Colors.scanningGlyphRing,
           style: StrokeStyle(lineWidth: 2.1, lineCap: .round)
         )
         .frame(width: 70, height: 70)
@@ -880,7 +880,7 @@ private struct LunarShimmerModifier: ViewModifier {
             LinearGradient(
               colors: [
                 .clear,
-                Color.white.opacity(0.34),
+                AppTheme.Colors.shimmerHighlight,
                 .clear
               ],
               startPoint: .top,
