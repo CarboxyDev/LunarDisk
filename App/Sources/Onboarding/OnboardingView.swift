@@ -16,36 +16,36 @@ struct OnboardingView: View {
   private let steps: [OnboardingStep] = [
     OnboardingStep(
       id: 0,
-      title: "Pick a Target, Stay in Control",
-      subtitle: "Choose a folder or volume to scan.",
+      title: "Choose What to Scan",
+      subtitle: "Run a full-disk scan or focus on one folder.",
       points: [
-        "Select one folder or volume before scanning.",
-        "Only minimal file-system permission is requested.",
-        "No file contents are collected or transmitted."
+        "Use Full-Disk Scan for a complete storage map.",
+        "Pick a folder when you want a focused, faster pass.",
+        "Cancel any scan and rerun after cleanup."
       ],
       systemImage: "folder.fill"
     ),
     OnboardingStep(
       id: 1,
-      title: "See Space Usage Instantly",
-      subtitle: "Visualize what consumes storage.",
+      title: "Understand Storage Quickly",
+      subtitle: "See where space is going without manual digging.",
       points: [
-        "Treemap chart shows relative size distribution.",
-        "Top-items list helps spot heavy folders quickly.",
-        "Readable sizes and percentages stay consistent."
+        "Treemap highlights the biggest storage areas first.",
+        "Top Items supports both direct and deep views.",
+        "Insights help you prioritize high-impact cleanup."
       ],
       systemImage: "chart.pie.fill"
     ),
     OnboardingStep(
       id: 2,
-      title: "Clean Up with Confidence",
-      subtitle: "Navigate, rescan, and verify.",
+      title: "Privacy First, Always Local",
+      subtitle: "Your scan data stays on your Mac.",
       points: [
-        "Drill into directories and rescan as needed.",
-        "Use insights to focus on highest-impact cleanup.",
-        "No auto-delete behavior in v1."
+        "LunarDisk reads metadata only: names, paths, structure, and sizes.",
+        "File contents are never uploaded or stored by the app.",
+        "Only required access is requested, with recovery guidance if blocked."
       ],
-      systemImage: "checkmark.seal.fill"
+      systemImage: "lock.shield.fill"
     ),
   ]
 
