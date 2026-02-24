@@ -1,44 +1,20 @@
 # LunarDisk
 
-LunarDisk is a macOS-only open-source disk usage analyzer inspired by DaisyDisk.
+LunarDisk is a macOS-only, open-source disk usage visualizer focused on helping users find and clean large storage consumers safely.
 
-## Repository layout
+## Product Summary
 
-- `App/`: macOS SwiftUI application target.
-- `Modules/CoreScan/`: file system scanning engine and shared file tree model.
-- `Modules/Visualization/`: sunburst layout and chart rendering.
-- `Modules/LunardiskAI/`: local heuristic analysis layer (AI-ready interface for later providers).
-- `scripts/`: terminal-first workflows for generate/build/test/run/clean.
-- `project.yml`: source-of-truth Xcode project configuration for XcodeGen.
+- Goal: quickly surface storage-heavy files/folders and let users clean up safely.
+- Users: Mac users low on space, plus developers/power users needing trusted breakdowns.
+- Core flow: pick folder/volume -> recursive scan -> visual + sortable size breakdown -> drill down/rescan.
+- Privacy: local-first, least-privilege filesystem access, no file-content collection/transmission, minimal settings/scan metadata only.
 
-## Prerequisites
+## Architecture
 
-- Xcode (already installed) and command-line tools:
-  - `xcodebuild -version`
-- XcodeGen:
-  - `brew install xcodegen`
+- `App/` (SwiftUI app orchestration), `Modules/CoreScan/` (scanner + size model), `Modules/Visualization/` (chart/layout), `Modules/LunardiskAI/` (local heuristics), `scripts/` (CLI workflow).
 
-## Terminal workflow
+## Workflow
 
-- Generate project:
-  - `./scripts/gen.sh`
-- Build app:
-  - `./scripts/build.sh`
-- Run app:
-  - `./scripts/run.sh`
-- Reset local app state (default scope: onboarding):
-  - `./scripts/reset-state.sh`
-  - `./scripts/reset-state.sh onboarding`
-  - `./scripts/reset-state.sh all`
-  - `RESET_STATE=onboarding ./scripts/run.sh`
-  - `LUNARDISK_RESET_STATE=onboarding ./scripts/run.sh`
-  - launch arg for direct app runs: `--reset-state=onboarding` (or `--reset-state-all`)
-- Run all tests:
-  - `./scripts/test.sh`
-- Clean generated artifacts:
-  - `./scripts/clean.sh`
-
-## Notes
-
-- The generated `Lunardisk.xcodeproj` is ignored and can always be recreated from `project.yml`.
-- v1 is local-only and has no backend/API dependency.
+- Prereq: install Xcode command-line tools and XcodeGen (`brew install xcodegen`).
+- Commands: `./scripts/gen.sh`, `./scripts/build.sh`, `./scripts/test.sh`, `./scripts/run.sh`, `./scripts/reset-state.sh [onboarding|all]`, `./scripts/clean.sh`.
+- `Lunardisk.xcodeproj` is generated from `project.yml` and can be recreated anytime.
