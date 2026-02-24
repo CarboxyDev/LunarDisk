@@ -173,12 +173,34 @@ final class TopConsumersStore: ObservableObject {
 private struct RootSignature: Equatable {
   let id: String
   let sizeBytes: Int64
-  let childCount: Int
+  let nodeCount: Int
+  let treeFingerprint: Int
 
   init(rootNode: FileNode) {
     id = rootNode.id
     sizeBytes = rootNode.sizeBytes
-    childCount = rootNode.children.count
+    var hasher = Hasher()
+    var count = 0
+    var stack: [FileNode] = [rootNode]
+
+    while let node = stack.popLast() {
+      count += 1
+      hasher.combine(node.path)
+      hasher.combine(node.name)
+      hasher.combine(node.isDirectory)
+      hasher.combine(node.sizeBytes)
+      hasher.combine(node.children.count)
+
+      let sortedChildren = node.children.sorted { lhs, rhs in
+        lhs.path < rhs.path
+      }
+      for child in sortedChildren.reversed() {
+        stack.append(child)
+      }
+    }
+
+    nodeCount = count
+    treeFingerprint = hasher.finalize()
   }
 }
 

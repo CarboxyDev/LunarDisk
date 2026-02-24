@@ -16,7 +16,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.lunardisk.app
         PRODUCT_NAME: Lunardisk
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Lunardisk
+        INFOPLIST_KEY_CFBundleDisplayName: LunarDisk
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
     dependencies:
       - package: CoreScan

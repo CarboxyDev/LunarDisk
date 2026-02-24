@@ -249,6 +249,80 @@ final class LunardiskTests: XCTestCase {
     XCTAssertTrue(model.insights.isEmpty)
   }
 
+  func testTopConsumersStoreRefreshesWhenTreeChangesButRootSummaryMatches() async {
+    let store = TopConsumersStore()
+    let rootA = FileNode(
+      name: "root",
+      path: "/root",
+      isDirectory: true,
+      sizeBytes: 300,
+      children: [
+        FileNode(
+          name: "a",
+          path: "/root/a",
+          isDirectory: true,
+          sizeBytes: 150,
+          children: [
+            FileNode(name: "a1", path: "/root/a/a1", isDirectory: false, sizeBytes: 150),
+          ]
+        ),
+        FileNode(
+          name: "b",
+          path: "/root/b",
+          isDirectory: true,
+          sizeBytes: 150,
+          children: [
+            FileNode(name: "b1", path: "/root/b/b1", isDirectory: false, sizeBytes: 149),
+            FileNode(name: "b2", path: "/root/b/b2", isDirectory: false, sizeBytes: 1),
+          ]
+        )
+      ]
+    )
+
+    store.prepare(for: rootA, limit: 1)
+    store.mode = .deepestConsumers
+    await waitUntil("deepest entries should be computed for rootA") {
+      store.entriesByMode[.deepestConsumers] != nil
+    }
+    XCTAssertEqual(store.visibleEntries(limit: 1).first?.node.path, "/root/a/a1")
+
+    let rootB = FileNode(
+      name: "root",
+      path: "/root",
+      isDirectory: true,
+      sizeBytes: 300,
+      children: [
+        FileNode(
+          name: "a",
+          path: "/root/a",
+          isDirectory: true,
+          sizeBytes: 150,
+          children: [
+            FileNode(name: "a1", path: "/root/a/a1", isDirectory: false, sizeBytes: 149),
+            FileNode(name: "a2", path: "/root/a/a2", isDirectory: false, sizeBytes: 1),
+          ]
+        ),
+        FileNode(
+          name: "b",
+          path: "/root/b",
+          isDirectory: true,
+          sizeBytes: 150,
+          children: [
+            FileNode(name: "b1", path: "/root/b/b1", isDirectory: false, sizeBytes: 150),
+          ]
+        )
+      ]
+    )
+
+    store.prepare(for: rootB, limit: 1)
+    await waitUntil("deepest entries should refresh for rootB") {
+      store.entriesByMode[.deepestConsumers] != nil &&
+        store.visibleEntries(limit: 1).first?.node.path == "/root/b/b1"
+    }
+
+    XCTAssertEqual(store.visibleEntries(limit: 1).first?.node.path, "/root/b/b1")
+  }
+
   private func waitForPendingScans(_ scanner: ControlledScanner, expected: Int) async {
     for _ in 0..<60 {
       if await scanner.pendingCount() >= expected {

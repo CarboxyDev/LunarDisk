@@ -92,7 +92,7 @@ struct OnboardingView: View {
 
   private var header: some View {
     VStack(alignment: .leading, spacing: AppTheme.Metrics.titleSpacing) {
-      Text("Lunardisk")
+      Text("LunarDisk")
         .font(AppTheme.Typography.heroTitle)
         .foregroundStyle(AppTheme.Colors.textPrimary)
 

@@ -84,7 +84,7 @@ struct RootView: View {
             .font(AppTheme.Typography.heroTitle)
             .foregroundStyle(AppTheme.Colors.textPrimary)
 
-          Text("Choose a full-disk or folder scan. Lunardisk stays local and reads metadata only.")
+          Text("Choose a full-disk or folder scan. LunarDisk stays local and reads metadata only.")
             .font(AppTheme.Typography.body)
             .foregroundStyle(AppTheme.Colors.textTertiary)
         }
@@ -450,7 +450,7 @@ struct RootView: View {
         .font(.system(size: 20, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textPrimary)
 
-      Text("Lunardisk requests only what it needs. If macOS blocks folders, you can recover with one guided path.")
+      Text("LunarDisk requests only what it needs. If macOS blocks folders, you can recover with one guided path.")
         .font(AppTheme.Typography.body)
         .foregroundStyle(AppTheme.Colors.textTertiary)
 
@@ -466,7 +466,7 @@ struct RootView: View {
       VStack(alignment: .leading, spacing: 10) {
         permissionStep(number: 1, text: "Run Scan Macintosh HD or choose a folder.")
         permissionStep(number: 2, text: "If access is denied, open Full Disk Access settings.")
-        permissionStep(number: 3, text: "Enable Lunardisk, then rerun your scan.")
+        permissionStep(number: 3, text: "Enable LunarDisk, then rerun your scan.")
       }
 
       HStack(spacing: 10) {
@@ -569,7 +569,7 @@ struct RootView: View {
       return (
         "hand.raised.fill",
         "Permission Needed",
-        "macOS blocked access to \(path). Open Full Disk Access, enable Lunardisk, then retry.",
+        "macOS blocked access to \(path). Open Full Disk Access, enable LunarDisk, then retry.",
         true
       )
     case let .notFound(path):
@@ -802,7 +802,7 @@ struct RootView: View {
           .font(.system(size: 26, weight: .semibold))
           .foregroundStyle(AppTheme.Colors.textPrimary)
 
-        Text("Lunardisk reads metadata only, not file contents.")
+        Text("LunarDisk reads metadata only, not file contents.")
           .font(AppTheme.Typography.body)
           .foregroundStyle(AppTheme.Colors.textSecondary)
       }

@@ -1,6 +1,6 @@
-# Lunardisk
+# LunarDisk
 
-Lunardisk is a macOS-only open-source disk usage analyzer inspired by DaisyDisk.
+LunarDisk is a macOS-only open-source disk usage analyzer inspired by DaisyDisk.
 
 ## Repository layout
 
