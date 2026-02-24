@@ -30,7 +30,7 @@ struct OnboardingView: View {
       title: "See Space Usage Instantly",
       subtitle: "Visualize what consumes storage.",
       points: [
-        "Sunburst chart shows relative size distribution.",
+        "Treemap chart shows relative size distribution.",
         "Top-items list helps spot heavy folders quickly.",
         "Readable sizes and percentages stay consistent."
       ],

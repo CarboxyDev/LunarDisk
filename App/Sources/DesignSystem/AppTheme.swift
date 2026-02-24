@@ -36,11 +36,11 @@ enum AppTheme {
     static let destructive = Color.dynamic(light: (217, 92, 92), dark: (229, 115, 115))
     static let destructiveForeground = Color.dynamic(light: (248, 247, 250), dark: (26, 24, 35))
 
-    static let chart1 = Color.dynamic(light: (138, 121, 171), dark: (169, 149, 201))
-    static let chart2 = Color.dynamic(light: (230, 165, 184), dark: (242, 184, 198))
-    static let chart3 = Color.dynamic(light: (119, 184, 161), dark: (119, 184, 161))
-    static let chart4 = Color.dynamic(light: (240, 200, 141), dark: (240, 200, 141))
-    static let chart5 = Color.dynamic(light: (160, 187, 227), dark: (160, 187, 227))
+    static let chart1 = Color.dynamic(light: (52, 124, 178), dark: (78, 170, 235))
+    static let chart2 = Color.dynamic(light: (179, 96, 48), dark: (227, 134, 71))
+    static let chart3 = Color.dynamic(light: (49, 129, 96), dark: (79, 176, 132))
+    static let chart4 = Color.dynamic(light: (145, 78, 150), dark: (191, 110, 196))
+    static let chart5 = Color.dynamic(light: (170, 138, 46), dark: (220, 186, 82))
     static let chartPalette = [chart1, chart2, chart3, chart4, chart5]
 
     static let statusSuccessForeground = Color.dynamic(light: (49, 92, 78), dark: (171, 220, 203))

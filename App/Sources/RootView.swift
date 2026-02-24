@@ -15,8 +15,8 @@ struct RootView: View {
     static let launchpadTwoColumnBreakpoint: CGFloat = 1_060
     static let resultsTwoColumnBreakpoint: CGFloat = 1_180
     static let minimumContentHeight: CGFloat = 520
-    static let chartMinSize: CGFloat = 280
-    static let chartMaxSize: CGFloat = 560
+    static let chartMinHeight: CGFloat = 340
+    static let chartMaxHeight: CGFloat = 620
     static let scanActionCardHeight: CGFloat = 164
     static let scanStatusRowHeight: CGFloat = 34
   }
@@ -415,7 +415,7 @@ struct RootView: View {
         .frame(height: AppTheme.Metrics.dividerHeight)
 
       VStack(alignment: .leading, spacing: 10) {
-        launchPoint("Sunburst breakdown of space usage by folder depth", icon: "chart.pie.fill")
+        launchPoint("Treemap breakdown of space usage by folder and size", icon: "chart.bar.xaxis")
         launchPoint("Top items list with direct and deep views", icon: "list.number")
         launchPoint("Heuristic insights for quick cleanup direction", icon: "lightbulb.fill")
         launchPoint("No file contents are uploaded or persisted", icon: "lock.shield.fill")
@@ -613,20 +613,20 @@ struct RootView: View {
   private func resultsContent(rootNode: FileNode) -> some View {
     GeometryReader { geometry in
       let useSingleColumn = geometry.size.width < Layout.resultsTwoColumnBreakpoint
-      let preferredChartSize = min(
-        max(geometry.size.width * (useSingleColumn ? 0.74 : 0.42), Layout.chartMinSize),
-        Layout.chartMaxSize
+      let preferredChartHeight = min(
+        max(geometry.size.width * (useSingleColumn ? 0.46 : 0.34), Layout.chartMinHeight),
+        Layout.chartMaxHeight
       )
 
       Group {
         if useSingleColumn {
           VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-            distributionSection(rootNode: rootNode, chartSize: preferredChartSize)
+            distributionSection(rootNode: rootNode, chartHeight: preferredChartHeight)
             supplementalResultsSections(rootNode: rootNode, useFixedWidth: false)
           }
         } else {
           HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-            distributionSection(rootNode: rootNode, chartSize: preferredChartSize)
+            distributionSection(rootNode: rootNode, chartHeight: preferredChartHeight)
             supplementalResultsSections(rootNode: rootNode, useFixedWidth: true)
           }
         }
@@ -635,14 +635,14 @@ struct RootView: View {
     }
   }
 
-  private func distributionSection(rootNode: FileNode, chartSize: CGFloat) -> some View {
+  private func distributionSection(rootNode: FileNode, chartHeight: CGFloat) -> some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .firstTextBaseline, spacing: 10) {
         VStack(alignment: .leading, spacing: 2) {
           Text("Storage Breakdown")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textSecondary)
-          Text("Nested distribution for \(displayName(for: rootNode))")
+          Text("Treemap distribution for \(displayName(for: rootNode))")
             .font(.system(size: 12, weight: .regular))
             .foregroundStyle(AppTheme.Colors.textTertiary)
         }
@@ -654,8 +654,17 @@ struct RootView: View {
           .foregroundStyle(AppTheme.Colors.textSecondary)
       }
 
-      SunburstChartView(root: rootNode, palette: AppTheme.Colors.chartPalette)
-        .frame(width: chartSize, height: chartSize)
+      TreemapChartView(root: rootNode, palette: AppTheme.Colors.chartPalette)
+        .frame(maxWidth: .infinity)
+        .frame(height: chartHeight)
+        .background(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
+            .overlay(
+              RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AppTheme.Colors.cardBorder.opacity(0.8), lineWidth: AppTheme.Metrics.cardBorderWidth)
+            )
+        )
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
     .padding(16)
