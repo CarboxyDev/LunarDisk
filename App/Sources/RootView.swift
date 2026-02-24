@@ -5,6 +5,16 @@ import SwiftUI
 import Visualization
 
 struct RootView: View {
+  private enum Layout {
+    static let sectionSpacing: CGFloat = 16
+    static let sideColumnWidth: CGFloat = 420
+    static let launchpadTwoColumnBreakpoint: CGFloat = 1_060
+    static let resultsTwoColumnBreakpoint: CGFloat = 1_180
+    static let minimumContentHeight: CGFloat = 520
+    static let chartMinSize: CGFloat = 280
+    static let chartMaxSize: CGFloat = 560
+  }
+
   @EnvironmentObject private var onboardingState: OnboardingStateStore
   @StateObject private var model = AppModel()
   @AppStorage("hasAcknowledgedDiskScanDisclosure") private var hasAcknowledgedDiskScanDisclosure = false
@@ -29,11 +39,12 @@ struct RootView: View {
     ZStack {
       background
 
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
         controls
         content
       }
       .padding(20)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     .sheet(isPresented: $showFullDiskScanDisclosure) {
       fullDiskScanDisclosureSheet
@@ -92,12 +103,13 @@ struct RootView: View {
         .buttonStyle(LunarSecondaryButtonStyle())
         .disabled(!model.canStartScan)
 
-        if model.isScanning {
-          Button("Cancel") {
-            model.cancelScan()
-          }
-          .buttonStyle(LunarSecondaryButtonStyle())
+        Button("Cancel") {
+          model.cancelScan()
         }
+        .buttonStyle(LunarSecondaryButtonStyle())
+        .opacity(model.isScanning ? 1 : 0)
+        .disabled(!model.isScanning)
+        .allowsHitTesting(model.isScanning)
 
         Spacer()
       }
@@ -185,55 +197,63 @@ struct RootView: View {
 
   @ViewBuilder
   private var currentTargetBanner: some View {
-    if let selectedURL = model.selectedURL {
-      VStack(alignment: .leading, spacing: 5) {
-        Text("Current target")
-          .font(.system(size: 11, weight: .medium))
-          .foregroundStyle(AppTheme.Colors.textTertiary)
-
-        Text(selectedURL.path)
-          .font(.system(size: 12, weight: .regular, design: .monospaced))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-          .lineLimit(1)
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 9)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(AppTheme.Colors.surfaceElevated.opacity(0.55))
-          .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-              .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-          )
-      )
-    } else {
-      Text("No target selected. Use Scan Macintosh HD for a one-click full scan, or choose a specific folder.")
-        .font(AppTheme.Typography.body)
+    VStack(alignment: .leading, spacing: 5) {
+      Text("Current target")
+        .font(.system(size: 11, weight: .medium))
         .foregroundStyle(AppTheme.Colors.textTertiary)
+
+      Text(model.selectedURL?.path ?? "No target selected. Use Scan Macintosh HD for a one-click full scan, or choose a specific folder.")
+        .font(.system(size: 12, weight: .regular, design: .monospaced))
+        .foregroundStyle(model.selectedURL == nil ? AppTheme.Colors.textTertiary : AppTheme.Colors.textSecondary)
+        .lineLimit(1)
     }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 9)
+    .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.55))
+        .overlay(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
+        )
+    )
   }
 
-  @ViewBuilder
   private var content: some View {
-    if model.isScanning {
-      loadingState
-    } else if let rootNode = model.rootNode {
-      resultsContent(rootNode: rootNode)
-    } else {
-      launchpad
+    Group {
+      if model.isScanning {
+        loadingState
+      } else if let rootNode = model.rootNode {
+        resultsContent(rootNode: rootNode)
+      } else {
+        launchpad
+      }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .frame(minHeight: Layout.minimumContentHeight, alignment: .topLeading)
   }
 
   private var launchpad: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      if let failure = model.lastFailure {
-        failureBanner(failure)
-      }
+    GeometryReader { geometry in
+      let useSingleColumn = geometry.size.width < Layout.launchpadTwoColumnBreakpoint
 
-      HStack(alignment: .top, spacing: 16) {
-        quickStartCard
-        permissionCard
+      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+        if let failure = model.lastFailure {
+          failureBanner(failure)
+        }
+
+        if useSingleColumn {
+          VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+            quickStartCard
+            permissionCard(useFixedWidth: false)
+          }
+        } else {
+          HStack(alignment: .top, spacing: Layout.sectionSpacing) {
+            quickStartCard
+            permissionCard(useFixedWidth: true)
+          }
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -298,8 +318,8 @@ struct RootView: View {
     }
   }
 
-  private var permissionCard: some View {
-    VStack(alignment: .leading, spacing: 14) {
+  private func permissionCard(useFixedWidth: Bool) -> some View {
+    let card = VStack(alignment: .leading, spacing: 14) {
       Image(systemName: "hand.raised.fill")
         .font(.system(size: 18, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textSecondary)
@@ -343,9 +363,18 @@ struct RootView: View {
       Spacer(minLength: 0)
     }
     .padding(20)
-    .frame(width: 420, alignment: .topLeading)
     .frame(minHeight: 350, alignment: .topLeading)
     .background(panelBackground())
+
+    return Group {
+      if useFixedWidth {
+        card
+          .frame(width: Layout.sideColumnWidth, alignment: .topLeading)
+      } else {
+        card
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+      }
+    }
   }
 
   private func permissionStep(number: Int, text: String) -> some View {
@@ -453,26 +482,60 @@ struct RootView: View {
   }
 
   private func resultsContent(rootNode: FileNode) -> some View {
-    HStack(alignment: .top, spacing: 16) {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Distribution")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
+    GeometryReader { geometry in
+      let useSingleColumn = geometry.size.width < Layout.resultsTwoColumnBreakpoint
+      let preferredChartSize = min(
+        max(geometry.size.width * (useSingleColumn ? 0.74 : 0.42), Layout.chartMinSize),
+        Layout.chartMaxSize
+      )
 
-        SunburstChartView(root: rootNode)
-          .frame(minWidth: 460, minHeight: 460)
+      Group {
+        if useSingleColumn {
+          VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+            distributionSection(rootNode: rootNode, chartSize: preferredChartSize)
+            supplementalResultsSections(rootNode: rootNode, useFixedWidth: false)
+          }
+        } else {
+          HStack(alignment: .top, spacing: Layout.sectionSpacing) {
+            distributionSection(rootNode: rootNode, chartSize: preferredChartSize)
+            supplementalResultsSections(rootNode: rootNode, useFixedWidth: true)
+          }
+        }
       }
-      .padding(16)
-      .frame(maxWidth: .infinity, alignment: .topLeading)
-      .background(panelBackground())
-
-      VStack(alignment: .leading, spacing: 16) {
-        topItemsSection(rootNode: rootNode)
-        insightsSection
-      }
-      .frame(width: 420, alignment: .topLeading)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  private func distributionSection(rootNode: FileNode, chartSize: CGFloat) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Distribution")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+
+      SunburstChartView(root: rootNode)
+        .frame(width: chartSize, height: chartSize)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .background(panelBackground())
+  }
+
+  private func supplementalResultsSections(rootNode: FileNode, useFixedWidth: Bool) -> some View {
+    let sections = VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+      topItemsSection(rootNode: rootNode)
+      insightsSection
+    }
+
+    return Group {
+      if useFixedWidth {
+        sections
+          .frame(width: Layout.sideColumnWidth, alignment: .topLeading)
+      } else {
+        sections
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+      }
+    }
   }
 
   private func topItemsSection(rootNode: FileNode) -> some View {
