@@ -12,10 +12,9 @@ struct RootView: View {
   private enum Layout {
     static let sectionSpacing: CGFloat = 16
     static let sideColumnWidth: CGFloat = 420
-    static let launchpadTwoColumnBreakpoint: CGFloat = 1_060
-    static let resultsTwoColumnBreakpoint: CGFloat = 1_180
-    static let minimumContentHeight: CGFloat = 520
-    static let chartMinHeight: CGFloat = 340
+    static let chartPreferredHeightSingleColumn: CGFloat = 360
+    static let chartPreferredHeightTwoColumn: CGFloat = 320
+    static let chartMinHeight: CGFloat = 260
     static let chartMaxHeight: CGFloat = 620
     static let scanActionCardHeight: CGFloat = 164
     static let scanStatusRowHeight: CGFloat = 34
@@ -47,11 +46,14 @@ struct RootView: View {
     ZStack {
       background
 
-      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-        controls
-        content
+      ScrollView(.vertical) {
+        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+          controls
+          content
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
       }
-      .padding(20)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     .sheet(isPresented: $showFullDiskScanDisclosure) {
@@ -368,33 +370,28 @@ struct RootView: View {
         launchpad
       }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .frame(minHeight: Layout.minimumContentHeight, alignment: .topLeading)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
   }
 
   private var launchpad: some View {
-    GeometryReader { geometry in
-      let useSingleColumn = geometry.size.width < Layout.launchpadTwoColumnBreakpoint
+    VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+      if let failure = model.lastFailure {
+        failureBanner(failure)
+      }
 
-      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-        if let failure = model.lastFailure {
-          failureBanner(failure)
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .top, spacing: Layout.sectionSpacing) {
+          quickStartCard
+          permissionCard(useFixedWidth: true)
         }
 
-        if useSingleColumn {
-          VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-            quickStartCard
-            permissionCard(useFixedWidth: false)
-          }
-        } else {
-          HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-            quickStartCard
-            permissionCard(useFixedWidth: true)
-          }
+        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+          quickStartCard
+          permissionCard(useFixedWidth: false)
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
   }
 
   private var quickStartCard: some View {
@@ -612,32 +609,24 @@ struct RootView: View {
   }
 
   private func resultsContent(rootNode: FileNode) -> some View {
-    GeometryReader { geometry in
-      let useSingleColumn = geometry.size.width < Layout.resultsTwoColumnBreakpoint
-      let preferredChartHeight = min(
-        max(geometry.size.width * (useSingleColumn ? 0.46 : 0.34), Layout.chartMinHeight),
-        Layout.chartMaxHeight
-      )
-
-      Group {
-        if useSingleColumn {
-          VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-            distributionSection(rootNode: rootNode, chartHeight: preferredChartHeight)
-            supplementalResultsSections(rootNode: rootNode, useFixedWidth: false)
-          }
-        } else {
-          HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-            distributionSection(rootNode: rootNode, chartHeight: preferredChartHeight)
-            supplementalResultsSections(rootNode: rootNode, useFixedWidth: true)
-          }
-        }
+    ViewThatFits(in: .horizontal) {
+      HStack(alignment: .top, spacing: Layout.sectionSpacing) {
+        distributionSection(rootNode: rootNode, chartHeight: Layout.chartPreferredHeightTwoColumn)
+        supplementalResultsSections(rootNode: rootNode, useFixedWidth: true)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+        distributionSection(rootNode: rootNode, chartHeight: Layout.chartPreferredHeightSingleColumn)
+        supplementalResultsSections(rootNode: rootNode, useFixedWidth: false)
+      }
     }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
   }
 
   private func distributionSection(rootNode: FileNode, chartHeight: CGFloat) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
+    let clampedChartHeight = min(max(chartHeight, Layout.chartMinHeight), Layout.chartMaxHeight)
+
+    return VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .firstTextBaseline, spacing: 10) {
         VStack(alignment: .leading, spacing: 2) {
           Text("Storage Breakdown")
@@ -677,7 +666,7 @@ struct RootView: View {
         density: treemapDensity
       )
         .frame(maxWidth: .infinity)
-        .frame(height: chartHeight)
+        .frame(height: clampedChartHeight)
         .background(
           RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
@@ -698,6 +687,7 @@ struct RootView: View {
       TopItemsPanel(rootNode: rootNode, onRevealInFinder: revealInFinder(path:))
       insightsSection
     }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
 
     return Group {
       if useFixedWidth {
@@ -747,7 +737,9 @@ struct RootView: View {
         }
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .lunarPanelBackground()
   }
 

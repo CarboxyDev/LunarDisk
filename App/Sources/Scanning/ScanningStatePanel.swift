@@ -42,7 +42,7 @@ struct ScanningStatePanel: View {
     .padding(.horizontal, 24)
     .padding(.vertical, 28)
     .frame(maxWidth: 780)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    .frame(maxWidth: .infinity, alignment: .center)
     .lunarPanelBackground()
     .onReceive(
       Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()

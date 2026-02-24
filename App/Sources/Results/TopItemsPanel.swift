@@ -225,11 +225,13 @@ struct TopItemsPanel: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .frame(maxHeight: 300)
+        .frame(maxWidth: .infinity, maxHeight: 300)
         .animation(nil, value: store.mode)
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .lunarPanelBackground()
     .onAppear {
       store.prepare(for: rootNode)
