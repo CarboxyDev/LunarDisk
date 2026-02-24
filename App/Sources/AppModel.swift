@@ -18,13 +18,14 @@ final class AppModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var lastFailure: ScanFailure?
 
-  private let scanner: DirectoryScanner
-  private let analyzer: HeuristicAnalyzer
+  private let scanner: any FileScanning
+  private let analyzer: any AIAnalyzing
   private var scanTask: Task<Void, Never>?
+  private var activeScanID: UUID?
 
   init(
-    scanner: DirectoryScanner = DirectoryScanner(),
-    analyzer: HeuristicAnalyzer = HeuristicAnalyzer()
+    scanner: any FileScanning = DirectoryScanner(),
+    analyzer: any AIAnalyzing = HeuristicAnalyzer()
   ) {
     self.scanner = scanner
     self.analyzer = analyzer
@@ -54,37 +55,57 @@ final class AppModel: ObservableObject {
   func startScan() {
     guard let selectedURL else { return }
     scanTask?.cancel()
+    scanTask = nil
+    let scanID = UUID()
+    activeScanID = scanID
 
     scanTask = Task { [weak self] in
-      await self?.scan(url: selectedURL)
+      await self?.scan(url: selectedURL, scanID: scanID)
     }
   }
 
   func cancelScan() {
+    activeScanID = nil
     scanTask?.cancel()
+    scanTask = nil
     isScanning = false
   }
 
-  private func scan(url: URL) async {
+  private func scan(url: URL, scanID: UUID) async {
+    guard activeScanID == scanID, !Task.isCancelled else { return }
     isScanning = true
+    defer {
+      if activeScanID == scanID {
+        isScanning = false
+        scanTask = nil
+        activeScanID = nil
+      }
+    }
     errorMessage = nil
     insights = []
     lastFailure = nil
 
     do {
+      try Task.checkCancellation()
       let scannedRoot = try await scanner.scan(at: url, maxDepth: 8)
-      if Task.isCancelled { return }
+      try Task.checkCancellation()
+      guard activeScanID == scanID else { return }
+
+      let generatedInsights = await analyzer.generateInsights(for: scannedRoot)
+      try Task.checkCancellation()
+      guard activeScanID == scanID else { return }
 
       rootNode = scannedRoot
-      insights = await analyzer.generateInsights(for: scannedRoot)
+      insights = generatedInsights
+    } catch is CancellationError {
+      return
     } catch {
+      guard activeScanID == scanID else { return }
       if Task.isCancelled { return }
       rootNode = nil
       errorMessage = error.localizedDescription
       lastFailure = classify(error: error)
     }
-
-    isScanning = false
   }
 
   private func classify(error: Error) -> ScanFailure {

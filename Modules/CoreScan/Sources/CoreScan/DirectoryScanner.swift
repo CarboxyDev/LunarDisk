@@ -33,6 +33,7 @@ public actor DirectoryScanner: FileScanning {
   }
 
   public func scan(at url: URL, maxDepth: Int? = nil) async throws -> FileNode {
+    try Task.checkCancellation()
     guard fileManager.fileExists(atPath: url.path) else {
       throw ScanError.notFound(path: url.path)
     }
@@ -40,6 +41,7 @@ public actor DirectoryScanner: FileScanning {
   }
 
   private func scanNode(at url: URL, depth: Int, maxDepth: Int?) async throws -> FileNode {
+    try Task.checkCancellation()
     let values = try resourceValues(for: url)
     let name = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
     let isDirectory = values.isDirectory ?? false
@@ -65,6 +67,7 @@ public actor DirectoryScanner: FileScanning {
 
     let childURLs: [URL]
     do {
+      try Task.checkCancellation()
       childURLs = try fileManager.contentsOfDirectory(
         at: url,
         includingPropertiesForKeys: Array(keys),
@@ -78,6 +81,7 @@ public actor DirectoryScanner: FileScanning {
     children.reserveCapacity(childURLs.count)
 
     for childURL in childURLs {
+      try Task.checkCancellation()
       let childValues: URLResourceValues
       do {
         childValues = try resourceValues(for: childURL)
@@ -116,12 +120,14 @@ public actor DirectoryScanner: FileScanning {
 
   private func shallowDirectorySize(at url: URL) throws -> Int64 {
     do {
+      try Task.checkCancellation()
       let childURLs = try fileManager.contentsOfDirectory(
         at: url,
         includingPropertiesForKeys: Array(keys),
         options: [.skipsPackageDescendants]
       )
       return try childURLs.reduce(Int64(0)) { partialResult, childURL in
+        try Task.checkCancellation()
         let values: URLResourceValues
         do {
           values = try resourceValues(for: childURL)
