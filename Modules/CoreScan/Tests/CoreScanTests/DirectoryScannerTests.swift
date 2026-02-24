@@ -143,6 +143,33 @@ final class DirectoryScannerTests: XCTestCase {
     }
   }
 
+  func testDepthLimitedScanStillAggregatesDeepNestedFileSizes() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    var current = root
+    for index in 0..<5 {
+      let nested = current.appendingPathComponent("dir-\(index)", isDirectory: true)
+      try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+      current = nested
+    }
+
+    let deepFile = current.appendingPathComponent("deep.bin")
+    try Data(repeating: 0xAC, count: 11).write(to: deepFile)
+
+    let scanner = DirectoryScanner()
+    let result = try await scanner.scan(at: root, maxDepth: 2)
+
+    XCTAssertEqual(result.sizeBytes, 11)
+    XCTAssertEqual(result.children.count, 1)
+    XCTAssertEqual(result.children.first?.sizeBytes, 11)
+    XCTAssertEqual(result.children.first?.children.count, 1)
+    XCTAssertEqual(result.children.first?.children.first?.sizeBytes, 11)
+    XCTAssertTrue(result.children.first?.children.first?.children.isEmpty == true)
+  }
+
   func testSortedChildrenBySizeBreaksTiesDeterministically() {
     let root = FileNode(
       name: "root",

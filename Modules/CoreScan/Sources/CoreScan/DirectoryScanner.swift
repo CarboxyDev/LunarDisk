@@ -60,7 +60,7 @@ public actor DirectoryScanner: FileScanning {
         name: name,
         path: url.path,
         isDirectory: true,
-        sizeBytes: try shallowDirectorySize(at: url),
+        sizeBytes: try recursiveDirectorySize(at: url),
         children: []
       )
     }
@@ -122,7 +122,7 @@ public actor DirectoryScanner: FileScanning {
     )
   }
 
-  private func shallowDirectorySize(at url: URL) throws -> Int64 {
+  private func recursiveDirectorySize(at url: URL) throws -> Int64 {
     do {
       try Task.checkCancellation()
       let childURLs = try fileManager.contentsOfDirectory(
@@ -132,22 +132,35 @@ public actor DirectoryScanner: FileScanning {
       ).sorted { lhs, rhs in
         lhs.path < rhs.path
       }
-      return try childURLs.reduce(Int64(0)) { partialResult, childURL in
+      var total: Int64 = 0
+      for childURL in childURLs {
         try Task.checkCancellation()
         let values: URLResourceValues
         do {
           values = try resourceValues(for: childURL)
         } catch {
           if shouldSkip(error: error) {
-            return partialResult
+            continue
           }
           throw error
         }
-        if values.isDirectory == true {
-          return partialResult
+        if values.isSymbolicLink == true {
+          continue
         }
-        return partialResult + fileSize(from: values)
+        if values.isDirectory == true {
+          do {
+            total += try recursiveDirectorySize(at: childURL)
+          } catch {
+            if shouldSkip(error: error) {
+              continue
+            }
+            throw error
+          }
+          continue
+        }
+        total += fileSize(from: values)
       }
+      return total
     } catch is CancellationError {
       throw CancellationError()
     } catch {
