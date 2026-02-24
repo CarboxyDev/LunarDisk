@@ -22,7 +22,7 @@ struct RootView: View {
 
   @EnvironmentObject private var onboardingState: OnboardingStateStore
   @StateObject private var model = AppModel()
-  @AppStorage("hasAcknowledgedDiskScanDisclosure") private var hasAcknowledgedDiskScanDisclosure = false
+  @AppStorage(PersistedState.fullDiskScanDisclosureAcknowledgedKey) private var hasAcknowledgedDiskScanDisclosure = false
   @State private var showFullDiskScanDisclosure = false
   @State private var treemapDensity: TreemapDensity = .clean
   @FocusState private var focusedTarget: FocusTarget?

@@ -32,6 +32,7 @@ enum PersistedStateScope: String, CaseIterable, Hashable {
 
 enum PersistedState {
   static let onboardingCompletionKey = "hasCompletedOnboarding"
+  static let fullDiskScanDisclosureAcknowledgedKey = "hasAcknowledgedDiskScanDisclosure"
 
   static func reset(scopes: Set<PersistedStateScope>, userDefaults: UserDefaults = .standard) {
     guard !scopes.isEmpty else { return }
@@ -48,5 +49,6 @@ enum PersistedState {
 
   static func resetAll(userDefaults: UserDefaults = .standard) {
     userDefaults.removeObject(forKey: onboardingCompletionKey)
+    userDefaults.removeObject(forKey: fullDiskScanDisclosureAcknowledgedKey)
   }
 }

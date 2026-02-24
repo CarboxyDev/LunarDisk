@@ -27,8 +27,13 @@ public struct FileNode: Identifiable, Hashable, Sendable {
 public extension FileNode {
   var sortedChildrenBySize: [FileNode] {
     children.sorted { lhs, rhs in
-      lhs.sizeBytes > rhs.sizeBytes
+      if lhs.sizeBytes != rhs.sizeBytes {
+        return lhs.sizeBytes > rhs.sizeBytes
+      }
+      if lhs.name != rhs.name {
+        return lhs.name < rhs.name
+      }
+      return lhs.path < rhs.path
     }
   }
 }
-

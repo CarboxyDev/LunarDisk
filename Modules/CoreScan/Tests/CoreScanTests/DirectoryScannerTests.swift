@@ -115,4 +115,47 @@ final class DirectoryScannerTests: XCTestCase {
       XCTFail("Unexpected error: \(error)")
     }
   }
+
+  func testDepthLimitedScanCancellationRethrowsCancellationError() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    for index in 0..<80 {
+      let file = root.appendingPathComponent("file-\(index).txt")
+      try Data(repeating: UInt8(index % 255), count: 4).write(to: file)
+    }
+
+    let scanner = DirectoryScanner(fileManager: SlowFileManager(delay: 0.2))
+    let task = Task { try await scanner.scan(at: root, maxDepth: 0) }
+
+    try await Task.sleep(nanoseconds: 10_000_000)
+    task.cancel()
+
+    do {
+      _ = try await task.value
+      XCTFail("Expected cancellation error")
+    } catch is CancellationError {
+      XCTAssertTrue(task.isCancelled)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
+  func testSortedChildrenBySizeBreaksTiesDeterministically() {
+    let root = FileNode(
+      name: "root",
+      path: "/root",
+      isDirectory: true,
+      sizeBytes: 30,
+      children: [
+        FileNode(name: "b", path: "/root/b", isDirectory: false, sizeBytes: 10),
+        FileNode(name: "a", path: "/root/a", isDirectory: false, sizeBytes: 10),
+        FileNode(name: "c", path: "/root/c", isDirectory: false, sizeBytes: 10),
+      ]
+    )
+
+    XCTAssertEqual(root.sortedChildrenBySize.map(\.path), ["/root/a", "/root/b", "/root/c"])
+  }
 }

@@ -38,6 +38,37 @@ final class LunardiskTests: XCTestCase {
     }
   }
 
+  actor ImmediateScanner: FileScanning {
+    private let node: FileNode
+
+    init(node: FileNode) {
+      self.node = node
+    }
+
+    func scan(at url: URL, maxDepth: Int?) async throws -> FileNode {
+      node
+    }
+  }
+
+  actor SlowCancelableAnalyzer: AIAnalyzing {
+    private var observedCancellation = false
+
+    func generateInsights(for root: FileNode) async -> [Insight] {
+      for _ in 0..<80 {
+        if Task.isCancelled {
+          observedCancellation = true
+          return []
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+      }
+      return [Insight(severity: .info, message: "done")]
+    }
+
+    func cancellationObserved() -> Bool {
+      observedCancellation
+    }
+  }
+
   func testInitialModelState() {
     let model = AppModel()
 
@@ -75,6 +106,19 @@ final class LunardiskTests: XCTestCase {
 
     PersistedState.reset(scopes: [.onboarding], userDefaults: userDefaults)
     XCTAssertFalse(userDefaults.bool(forKey: PersistedState.onboardingCompletionKey))
+  }
+
+  func testPersistedStateResetAllClearsDisclosureAcknowledgement() {
+    let userDefaults = makeIsolatedDefaults()
+    defer { clear(userDefaults) }
+
+    userDefaults.set(true, forKey: PersistedState.onboardingCompletionKey)
+    userDefaults.set(true, forKey: PersistedState.fullDiskScanDisclosureAcknowledgedKey)
+
+    PersistedState.resetAll(userDefaults: userDefaults)
+
+    XCTAssertFalse(userDefaults.bool(forKey: PersistedState.onboardingCompletionKey))
+    XCTAssertFalse(userDefaults.bool(forKey: PersistedState.fullDiskScanDisclosureAcknowledgedKey))
   }
 
   func testSelectScanTargetResetsViewState() {
@@ -179,6 +223,32 @@ final class LunardiskTests: XCTestCase {
     XCTAssertEqual(store.visibleEntries(limit: 2).map(\.node.path), ["/root/a/a1", "/root/c/c1"])
   }
 
+  func testCancelScanCancelsInFlightInsightsTask() async {
+    let root = FileNode(name: "root", path: "/tmp/root", isDirectory: true, sizeBytes: 128)
+    let scanner = ImmediateScanner(node: root)
+    let analyzer = SlowCancelableAnalyzer()
+    let model = AppModel(scanner: scanner, analyzer: analyzer)
+    let target = URL(fileURLWithPath: "/tmp/root", isDirectory: true)
+
+    model.selectScanTarget(target)
+    model.startScan()
+
+    await waitForRootNode(model, expectedPath: "/tmp/root")
+    model.cancelScan()
+
+    var didObserveCancellation = false
+    for _ in 0..<80 {
+      if await analyzer.cancellationObserved() {
+        didObserveCancellation = true
+        break
+      }
+      try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+
+    XCTAssertTrue(didObserveCancellation)
+    XCTAssertTrue(model.insights.isEmpty)
+  }
+
   private func waitForPendingScans(_ scanner: ControlledScanner, expected: Int) async {
     for _ in 0..<60 {
       if await scanner.pendingCount() >= expected {
@@ -220,5 +290,6 @@ final class LunardiskTests: XCTestCase {
 
   private func clear(_ userDefaults: UserDefaults) {
     userDefaults.removeObject(forKey: PersistedState.onboardingCompletionKey)
+    userDefaults.removeObject(forKey: PersistedState.fullDiskScanDisclosureAcknowledgedKey)
   }
 }

@@ -9,6 +9,10 @@ public struct HeuristicAnalyzer: AIAnalyzing {
   public init() {}
 
   public func generateInsights(for root: FileNode) async -> [Insight] {
+    if Task.isCancelled {
+      return []
+    }
+
     guard root.sizeBytes > 0 else {
       return [Insight(severity: .info, message: "Selected folder is empty.")]
     }
@@ -29,6 +33,9 @@ public struct HeuristicAnalyzer: AIAnalyzing {
     }
 
     let fileCount = recursiveFileCount(in: root)
+    if Task.isCancelled {
+      return []
+    }
     if fileCount > 20_000 {
       insights.append(
         Insight(
@@ -58,6 +65,10 @@ public struct HeuristicAnalyzer: AIAnalyzing {
   }
 
   private func recursiveFileCount(in node: FileNode) -> Int {
+    if Task.isCancelled {
+      return 0
+    }
+
     if !node.isDirectory {
       return 1
     }
@@ -66,4 +77,3 @@ public struct HeuristicAnalyzer: AIAnalyzing {
     }
   }
 }
-

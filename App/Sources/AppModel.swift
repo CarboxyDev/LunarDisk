@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
   private let scanner: any FileScanning
   private let analyzer: any AIAnalyzing
   private var scanTask: Task<Void, Never>?
+  private var insightsTask: Task<[Insight], Never>?
   private var activeScanID: UUID?
 
   init(
@@ -33,6 +34,7 @@ final class AppModel: ObservableObject {
 
   deinit {
     scanTask?.cancel()
+    insightsTask?.cancel()
   }
 
   var canStartScan: Bool {
@@ -56,6 +58,8 @@ final class AppModel: ObservableObject {
     guard let selectedURL else { return }
     scanTask?.cancel()
     scanTask = nil
+    insightsTask?.cancel()
+    insightsTask = nil
     let scanID = UUID()
     activeScanID = scanID
 
@@ -68,6 +72,8 @@ final class AppModel: ObservableObject {
     activeScanID = nil
     scanTask?.cancel()
     scanTask = nil
+    insightsTask?.cancel()
+    insightsTask = nil
     isScanning = false
   }
 
@@ -95,9 +101,12 @@ final class AppModel: ObservableObject {
       isScanning = false
 
       let analyzer = self.analyzer
-      let generatedInsights = await Task.detached(priority: .utility) {
+      let insightsTask = Task.detached(priority: .utility) {
         await analyzer.generateInsights(for: scannedRoot)
-      }.value
+      }
+      self.insightsTask = insightsTask
+      let generatedInsights = await insightsTask.value
+      self.insightsTask = nil
 
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }

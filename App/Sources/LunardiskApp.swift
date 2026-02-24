@@ -16,7 +16,7 @@ struct LunardiskApp: App {
         .environmentObject(onboardingState)
         .preferredColorScheme(.dark)
     }
-    .defaultSize(width: 1120, height: 760)
+    .defaultSize(width: 1120, height: 780)
 #if DEBUG
     .commands {
       CommandMenu("Developer") {

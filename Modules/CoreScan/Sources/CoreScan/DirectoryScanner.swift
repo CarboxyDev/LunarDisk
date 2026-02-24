@@ -72,7 +72,11 @@ public actor DirectoryScanner: FileScanning {
         at: url,
         includingPropertiesForKeys: Array(keys),
         options: [.skipsPackageDescendants]
-      )
+      ).sorted { lhs, rhs in
+        lhs.path < rhs.path
+      }
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       throw ScanError.unreadable(path: url.path, underlying: error)
     }
@@ -125,7 +129,9 @@ public actor DirectoryScanner: FileScanning {
         at: url,
         includingPropertiesForKeys: Array(keys),
         options: [.skipsPackageDescendants]
-      )
+      ).sorted { lhs, rhs in
+        lhs.path < rhs.path
+      }
       return try childURLs.reduce(Int64(0)) { partialResult, childURL in
         try Task.checkCancellation()
         let values: URLResourceValues
@@ -142,6 +148,8 @@ public actor DirectoryScanner: FileScanning {
         }
         return partialResult + fileSize(from: values)
       }
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       throw ScanError.unreadable(path: url.path, underlying: error)
     }
