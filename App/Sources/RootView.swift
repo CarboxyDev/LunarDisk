@@ -9,40 +9,6 @@ struct RootView: View {
     case folderScanStartButton
   }
 
-  private enum TopConsumersMode: String, CaseIterable, Identifiable {
-    case directChildren
-    case deepestConsumers
-
-    var id: String { rawValue }
-
-    var longTitle: String {
-      switch self {
-      case .directChildren:
-        return "Direct Children"
-      case .deepestConsumers:
-        return "Deepest Consumers"
-      }
-    }
-
-    var shortTitle: String {
-      switch self {
-      case .directChildren:
-        return "Direct"
-      case .deepestConsumers:
-        return "Deepest"
-      }
-    }
-
-    var helperText: String {
-      switch self {
-      case .directChildren:
-        return "Items directly inside this scanned location."
-      case .deepestConsumers:
-        return "Largest nested items deeper in the folder tree."
-      }
-    }
-  }
-
   private enum Layout {
     static let sectionSpacing: CGFloat = 16
     static let sideColumnWidth: CGFloat = 420
@@ -55,74 +21,10 @@ struct RootView: View {
     static let scanStatusRowHeight: CGFloat = 34
   }
 
-  private struct TopConsumerEntry: Identifiable {
-    let node: FileNode
-    var id: String { node.id }
-  }
-
-  private struct TopItemsRow: View {
-    let entry: TopConsumerEntry
-    let onReveal: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-      HStack(spacing: 10) {
-        Image(systemName: entry.node.isDirectory ? "folder.fill" : "doc.fill")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-          .frame(width: 14)
-
-        VStack(alignment: .leading, spacing: 2) {
-          Text(entry.node.name)
-            .font(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.textPrimary)
-            .lineLimit(1)
-        }
-
-        Spacer()
-
-        Button(action: onReveal) {
-          Image(systemName: "arrow.up.forward.square")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-            .frame(width: 18, height: 18)
-            .background(
-              RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(AppTheme.Colors.surfaceElevated.opacity(0.75))
-            )
-        }
-        .buttonStyle(.plain)
-        .help("Reveal in Finder")
-        .opacity(isHovered ? 1 : 0)
-        .disabled(!isHovered)
-        .accessibilityHidden(!isHovered)
-
-        Text(ByteFormatter.string(from: entry.node.sizeBytes))
-          .font(AppTheme.Typography.body)
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-      }
-      .help(entry.node.path)
-      .contextMenu {
-        Button("Reveal in Finder", action: onReveal)
-      }
-      .onHover { isHovering in
-        isHovered = isHovering
-      }
-      .padding(.vertical, 4)
-      .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2))
-      .listRowBackground(Color.clear)
-    }
-  }
-
   @EnvironmentObject private var onboardingState: OnboardingStateStore
   @StateObject private var model = AppModel()
   @AppStorage("hasAcknowledgedDiskScanDisclosure") private var hasAcknowledgedDiskScanDisclosure = false
   @State private var showFullDiskScanDisclosure = false
-  @State private var topConsumersMode: TopConsumersMode = .directChildren
-  @State private var topConsumersCache: [TopConsumersMode: [TopConsumerEntry]] = [:]
-  @State private var topConsumersCacheRootID: String?
-  @State private var topConsumersCacheTask: Task<Void, Never>?
   @FocusState private var focusedTarget: FocusTarget?
 
   var body: some View {
@@ -205,7 +107,7 @@ struct RootView: View {
       scanStatusRow
     }
     .padding(16)
-    .background(panelBackground())
+    .lunarPanelBackground()
   }
 
   private var scanStatusRow: some View {
@@ -523,7 +425,7 @@ struct RootView: View {
     }
     .padding(20)
     .frame(maxWidth: .infinity, minHeight: 350, alignment: .topLeading)
-    .background(panelBackground())
+    .lunarPanelBackground()
   }
 
   private func launchPoint(_ text: String, icon: String) -> some View {
@@ -586,7 +488,7 @@ struct RootView: View {
     }
     .padding(20)
     .frame(minHeight: 350, alignment: .topLeading)
-    .background(panelBackground())
+    .lunarPanelBackground()
 
     return Group {
       if useFixedWidth {
@@ -731,18 +633,6 @@ struct RootView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    .onAppear {
-      warmTopConsumersCache(for: rootNode)
-    }
-    .onChange(of: rootNode.id) { _ in
-      warmTopConsumersCache(for: rootNode)
-    }
-    .onDisappear {
-      topConsumersCacheTask?.cancel()
-      topConsumersCacheTask = nil
-      topConsumersCache = [:]
-      topConsumersCacheRootID = nil
-    }
   }
 
   private func distributionSection(rootNode: FileNode, chartSize: CGFloat) -> some View {
@@ -770,12 +660,12 @@ struct RootView: View {
     }
     .padding(16)
     .frame(maxWidth: .infinity, alignment: .topLeading)
-    .background(panelBackground())
+    .lunarPanelBackground()
   }
 
   private func supplementalResultsSections(rootNode: FileNode, useFixedWidth: Bool) -> some View {
     let sections = VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-      topItemsSection(rootNode: rootNode)
+      TopItemsPanel(rootNode: rootNode, onRevealInFinder: revealInFinder(path:))
       insightsSection
     }
 
@@ -787,174 +677,6 @@ struct RootView: View {
         sections
           .frame(maxWidth: .infinity, alignment: .topLeading)
       }
-    }
-  }
-
-  private func topItemsSection(rootNode: FileNode) -> some View {
-    let items = topConsumerEntries(from: rootNode, mode: topConsumersMode, limit: 25)
-    let isPreparingDeepest = topConsumersMode == .deepestConsumers && topConsumersCache[.deepestConsumers] == nil
-
-    return VStack(alignment: .leading, spacing: 10) {
-      Text("Top Items")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      topItemsModePicker
-
-      Text(topConsumersMode.helperText)
-        .font(.system(size: 11, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      if isPreparingDeepest {
-        HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
-          Text("Preparing deepest consumers…")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-        }
-      }
-
-      if items.isEmpty {
-        Text("No items found for this target.")
-          .font(AppTheme.Typography.body)
-          .foregroundStyle(AppTheme.Colors.textTertiary)
-      } else {
-        List(items) { entry in
-          TopItemsRow(entry: entry) {
-            revealInFinder(path: entry.node.path)
-          }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(Color.clear)
-        .frame(maxHeight: 300)
-        .animation(nil, value: topConsumersMode)
-      }
-    }
-    .padding(16)
-    .background(panelBackground())
-  }
-
-  private var topItemsModePicker: some View {
-    ViewThatFits(in: .horizontal) {
-      modePicker(useShortLabels: false)
-      modePicker(useShortLabels: true)
-    }
-  }
-
-  private func modePicker(useShortLabels: Bool) -> some View {
-    Picker("Top Items Scope", selection: $topConsumersMode) {
-      Text(useShortLabels ? TopConsumersMode.directChildren.shortTitle : TopConsumersMode.directChildren.longTitle)
-        .tag(TopConsumersMode.directChildren)
-      Text(useShortLabels ? TopConsumersMode.deepestConsumers.shortTitle : TopConsumersMode.deepestConsumers.longTitle)
-        .tag(TopConsumersMode.deepestConsumers)
-    }
-    .pickerStyle(.segmented)
-    .labelsHidden()
-  }
-
-  private func topConsumerEntries(
-    from rootNode: FileNode,
-    mode: TopConsumersMode,
-    limit: Int
-  ) -> [TopConsumerEntry] {
-    if topConsumersCacheRootID != rootNode.id {
-      warmTopConsumersCache(for: rootNode)
-    }
-
-    if let cached = topConsumersCache[mode], !cached.isEmpty {
-      return Array(cached.prefix(limit))
-    }
-
-    if mode == .directChildren {
-      let immediate = rootNode.sortedChildrenBySize
-        .prefix(limit)
-        .map { TopConsumerEntry(node: $0) }
-      if !immediate.isEmpty {
-        return immediate
-      }
-    }
-
-    return [TopConsumerEntry(node: rootNode)]
-  }
-
-  private func warmTopConsumersCache(for rootNode: FileNode) {
-    guard topConsumersCacheRootID != rootNode.id else { return }
-
-    topConsumersCacheTask?.cancel()
-    topConsumersCacheRootID = rootNode.id
-
-    let direct = topNodesBySize(rootNode.children, limit: 25).map { TopConsumerEntry(node: $0) }
-    topConsumersCache = [.directChildren: direct]
-
-    topConsumersCacheTask = Task {
-      let deepest = await Task.detached(priority: .userInitiated) {
-        deepestTopNodes(from: rootNode, limit: 25)
-      }.value
-      guard !Task.isCancelled else { return }
-      await MainActor.run {
-        topConsumersCache[.deepestConsumers] = deepest.map { TopConsumerEntry(node: $0) }
-      }
-    }
-  }
-
-  private func topNodesBySize(_ nodes: [FileNode], limit: Int) -> [FileNode] {
-    guard limit > 0 else { return [] }
-    var top: [FileNode] = []
-    top.reserveCapacity(limit)
-
-    for node in nodes {
-      insertNodeBySize(node, into: &top, limit: limit)
-    }
-
-    return top
-  }
-
-  private func deepestTopNodes(from rootNode: FileNode, limit: Int) -> [FileNode] {
-    guard limit > 0 else { return [] }
-
-    var stack: [(node: FileNode, depth: Int)] = rootNode.children.map { ($0, 1) }
-    var topDeep: [FileNode] = []
-    var topAny: [FileNode] = []
-    topDeep.reserveCapacity(limit)
-    topAny.reserveCapacity(limit)
-
-    while let current = stack.popLast() {
-      insertNodeBySize(current.node, into: &topAny, limit: limit)
-      if current.depth >= 2 {
-        insertNodeBySize(current.node, into: &topDeep, limit: limit)
-      }
-      if current.node.isDirectory && !current.node.children.isEmpty {
-        for child in current.node.children {
-          stack.append((child, current.depth + 1))
-        }
-      }
-    }
-
-    return topDeep.isEmpty ? topAny : topDeep
-  }
-
-  private func insertNodeBySize(_ node: FileNode, into top: inout [FileNode], limit: Int) {
-    if top.count == limit, let last = top.last, node.sizeBytes <= last.sizeBytes {
-      return
-    }
-
-    var low = 0
-    var high = top.count
-    while low < high {
-      let mid = (low + high) / 2
-      if top[mid].sizeBytes < node.sizeBytes {
-        high = mid
-      } else {
-        low = mid + 1
-      }
-    }
-    let index = low
-    top.insert(node, at: index)
-
-    if top.count > limit {
-      top.removeLast()
     }
   }
 
@@ -996,37 +718,7 @@ struct RootView: View {
       }
     }
     .padding(16)
-    .background(panelBackground())
-  }
-
-  private func statePanel(icon: String, title: String, message: String) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Image(systemName: icon)
-        .font(.system(size: 17, weight: .medium))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      Text(title)
-        .font(.system(size: 18, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text(message)
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(20)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(panelBackground())
-  }
-
-  private func panelBackground() -> some View {
-    RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-      .fill(AppTheme.Colors.surface)
-      .overlay(
-        RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-          .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-      )
-      .shadow(color: AppTheme.Colors.shadow, radius: 16, x: 0, y: 8)
+    .lunarPanelBackground()
   }
 
   private func chooseFolder() {
@@ -1186,165 +878,5 @@ struct RootView: View {
     let url = URL(fileURLWithPath: path)
     guard FileManager.default.fileExists(atPath: path) else { return }
     NSWorkspace.shared.activateFileViewerSelecting([url])
-  }
-}
-
-private struct ScanningStatePanel: View {
-  let title: String
-  let message: String
-  let steps: [String]
-  @State private var activeStepIndex = 0
-
-  var body: some View {
-    VStack(spacing: 18) {
-      AnimatedScanGlyph()
-
-      VStack(spacing: 8) {
-        Text(title)
-          .font(.system(size: 24, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textPrimary)
-          .multilineTextAlignment(.center)
-
-        Text(message)
-          .font(AppTheme.Typography.body)
-          .foregroundStyle(AppTheme.Colors.textTertiary)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .frame(maxWidth: 580)
-
-      scanLiveBadge
-
-      HStack(spacing: 8) {
-        ProgressView()
-          .controlSize(.small)
-          .tint(AppTheme.Colors.textSecondary)
-
-        Text(activeStepText)
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-          .lineLimit(1)
-      }
-      .padding(.top, 12)
-      .frame(maxWidth: .infinity, alignment: .center)
-    }
-    .padding(.horizontal, 24)
-    .padding(.vertical, 28)
-    .frame(maxWidth: 780)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-    .background(
-      RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-        .fill(AppTheme.Colors.surface)
-        .overlay(
-          RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-        .shadow(color: AppTheme.Colors.shadow, radius: 16, x: 0, y: 8)
-    )
-    .onReceive(
-      Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
-    ) { _ in
-      guard !steps.isEmpty else { return }
-      withAnimation(.easeInOut(duration: 0.2)) {
-        activeStepIndex = (activeStepIndex + 1) % steps.count
-      }
-    }
-  }
-
-  private var scanLiveBadge: some View {
-    HStack(spacing: 6) {
-      Circle()
-        .fill(AppTheme.Colors.accent)
-        .frame(width: 8, height: 8)
-      Text("Scan in progress")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
-    .background(
-      Capsule(style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.75))
-        .overlay(
-          Capsule(style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
-  }
-
-  private var activeStepText: String {
-    guard !steps.isEmpty else {
-      return "Scanning…"
-    }
-    return steps[activeStepIndex]
-  }
-}
-
-private struct AnimatedScanGlyph: View {
-  var body: some View {
-    RoundedRectangle(cornerRadius: 22, style: .continuous)
-      .fill(
-        LinearGradient(
-          colors: [
-            AppTheme.Colors.scanningGlyphBackground,
-            AppTheme.Colors.surfaceElevated.opacity(0.92)
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing
-        )
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-          .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-      )
-      .overlay {
-        Image(systemName: "internaldrive.fill")
-          .font(.system(size: 31, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textPrimary)
-      }
-      .frame(width: 84, height: 84)
-      .shadow(color: AppTheme.Colors.shadow, radius: 10, x: 0, y: 6)
-  }
-}
-
-private struct LunarShimmerModifier: ViewModifier {
-  let active: Bool
-  @State private var phase: CGFloat = -1
-
-  func body(content: Content) -> some View {
-    content
-      .overlay {
-        if active {
-          GeometryReader { proxy in
-            let width = max(proxy.size.width, 120)
-            LinearGradient(
-              colors: [
-                .clear,
-                AppTheme.Colors.shimmerHighlight,
-                .clear
-              ],
-              startPoint: .top,
-              endPoint: .bottom
-            )
-            .frame(width: width * 0.34)
-            .blur(radius: 6)
-            .offset(x: phase * (width + 120))
-            .onAppear {
-              phase = -1
-              withAnimation(.linear(duration: 1.55).repeatForever(autoreverses: false)) {
-                phase = 1
-              }
-            }
-          }
-          .allowsHitTesting(false)
-          .mask(content)
-        }
-      }
-  }
-}
-
-private extension View {
-  func lunarShimmer(active: Bool) -> some View {
-    modifier(LunarShimmerModifier(active: active))
   }
 }

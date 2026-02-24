@@ -138,6 +138,47 @@ final class LunardiskTests: XCTestCase {
     XCTAssertEqual(model.rootNode?.sizeBytes, 2)
   }
 
+  func testTopConsumersStoreComputesDirectAndDeepestEntries() async {
+    let store = TopConsumersStore()
+    let root = FileNode(
+      name: "root",
+      path: "/root",
+      isDirectory: true,
+      sizeBytes: 300,
+      children: [
+        FileNode(
+          name: "a",
+          path: "/root/a",
+          isDirectory: true,
+          sizeBytes: 100,
+          children: [
+            FileNode(name: "a1", path: "/root/a/a1", isDirectory: false, sizeBytes: 90)
+          ]
+        ),
+        FileNode(name: "b", path: "/root/b", isDirectory: false, sizeBytes: 95),
+        FileNode(
+          name: "c",
+          path: "/root/c",
+          isDirectory: true,
+          sizeBytes: 85,
+          children: [
+            FileNode(name: "c1", path: "/root/c/c1", isDirectory: false, sizeBytes: 80)
+          ]
+        )
+      ]
+    )
+
+    store.prepare(for: root, limit: 2)
+    XCTAssertEqual(store.visibleEntries(limit: 2).map(\.node.path), ["/root/a", "/root/b"])
+
+    store.mode = .deepestConsumers
+    await waitUntil("deepest entries should be computed") {
+      store.entriesByMode[.deepestConsumers] != nil
+    }
+
+    XCTAssertEqual(store.visibleEntries(limit: 2).map(\.node.path), ["/root/a/a1", "/root/c/c1"])
+  }
+
   private func waitForPendingScans(_ scanner: ControlledScanner, expected: Int) async {
     for _ in 0..<60 {
       if await scanner.pendingCount() >= expected {
@@ -156,6 +197,16 @@ final class LunardiskTests: XCTestCase {
       try? await Task.sleep(nanoseconds: 10_000_000)
     }
     XCTFail("Timed out waiting for rootNode at \(expectedPath)")
+  }
+
+  private func waitUntil(_ message: String, condition: () -> Bool) async {
+    for _ in 0..<120 {
+      if condition() {
+        return
+      }
+      try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTFail("Timed out waiting for condition: \(message)")
   }
 
   private func makeIsolatedDefaults() -> UserDefaults {
