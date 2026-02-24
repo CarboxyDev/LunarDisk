@@ -25,6 +25,7 @@ struct RootView: View {
   @StateObject private var model = AppModel()
   @AppStorage("hasAcknowledgedDiskScanDisclosure") private var hasAcknowledgedDiskScanDisclosure = false
   @State private var showFullDiskScanDisclosure = false
+  @State private var treemapDensity: TreemapDensity = .clean
   @FocusState private var focusedTarget: FocusTarget?
 
   var body: some View {
@@ -649,12 +650,32 @@ struct RootView: View {
 
         Spacer()
 
-        Text(ByteFormatter.string(from: rootNode.sizeBytes))
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
+        HStack(spacing: 10) {
+          Picker("Treemap Density", selection: $treemapDensity) {
+            Text("Clean")
+              .tag(TreemapDensity.clean)
+            Text("Detailed")
+              .tag(TreemapDensity.detailed)
+          }
+          .pickerStyle(.segmented)
+          .labelsHidden()
+          .frame(width: 186)
+
+          Text(ByteFormatter.string(from: rootNode.sizeBytes))
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+        }
       }
 
-      TreemapChartView(root: rootNode, palette: AppTheme.Colors.chartPalette)
+      Text(treemapDensity == .clean ? "Clean mode prioritizes large, actionable areas." : "Detailed mode shows deeper nested breakdowns.")
+        .font(.system(size: 11, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
+
+      TreemapChartView(
+        root: rootNode,
+        palette: AppTheme.Colors.chartPalette,
+        density: treemapDensity
+      )
         .frame(maxWidth: .infinity)
         .frame(height: chartHeight)
         .background(

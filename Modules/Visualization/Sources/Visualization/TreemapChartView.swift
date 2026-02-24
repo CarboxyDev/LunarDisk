@@ -2,6 +2,11 @@ import CoreGraphics
 import CoreScan
 import SwiftUI
 
+public enum TreemapDensity: String, CaseIterable, Sendable {
+  case clean
+  case detailed
+}
+
 public struct TreemapChartView: View {
   private static let defaultPalette: [Color] = [
     Color(red: 138 / 255, green: 121 / 255, blue: 171 / 255),
@@ -16,21 +21,24 @@ public struct TreemapChartView: View {
   private let hitTestCells: [TreemapCell]
   private let cellsByID: [String: TreemapCell]
   private let palette: [Color]
+  private let density: TreemapDensity
 
   @State private var hoveredCellID: String?
   @State private var pinnedCellID: String?
 
   public init(root: FileNode) {
-    self.init(root: root, palette: Self.defaultPalette)
+    self.init(root: root, palette: Self.defaultPalette, density: .clean)
   }
 
-  public init(root: FileNode, palette: [Color]) {
+  public init(root: FileNode, palette: [Color], density: TreemapDensity = .clean) {
+    self.density = density
+    let parameters = Self.layoutParameters(for: density)
     let cells = TreemapLayout.makeCells(
       from: root,
-      maxDepth: 2,
-      maxChildrenPerNode: 18,
-      minVisibleFraction: 0.008,
-      maxCellCount: 900
+      maxDepth: parameters.maxDepth,
+      maxChildrenPerNode: parameters.maxChildrenPerNode,
+      minVisibleFraction: parameters.minVisibleFraction,
+      maxCellCount: parameters.maxCellCount
     )
     rootSizeBytes = root.sizeBytes
     self.cells = cells
@@ -224,5 +232,19 @@ public struct TreemapChartView: View {
       return "square.grid.3x3.fill"
     }
     return cell.isDirectory ? "folder.fill" : "doc.fill"
+  }
+
+  private static func layoutParameters(for density: TreemapDensity) -> (
+    maxDepth: Int,
+    maxChildrenPerNode: Int,
+    minVisibleFraction: Double,
+    maxCellCount: Int
+  ) {
+    switch density {
+    case .clean:
+      return (maxDepth: 2, maxChildrenPerNode: 18, minVisibleFraction: 0.008, maxCellCount: 900)
+    case .detailed:
+      return (maxDepth: 3, maxChildrenPerNode: 36, minVisibleFraction: 0.0025, maxCellCount: 2_200)
+    }
   }
 }
