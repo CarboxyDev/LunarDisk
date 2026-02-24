@@ -12,9 +12,9 @@ enum TopConsumersMode: String, CaseIterable, Identifiable {
   var longTitle: String {
     switch self {
     case .directChildren:
-      return "Direct Children"
+      return "Direct Items"
     case .deepestConsumers:
-      return "Deepest Consumers"
+      return "Nested Items"
     }
   }
 
@@ -23,7 +23,7 @@ enum TopConsumersMode: String, CaseIterable, Identifiable {
     case .directChildren:
       return "Direct"
     case .deepestConsumers:
-      return "Deepest"
+      return "Nested"
     }
   }
 
@@ -32,7 +32,7 @@ enum TopConsumersMode: String, CaseIterable, Identifiable {
     case .directChildren:
       return "Items directly inside this scanned location."
     case .deepestConsumers:
-      return "Largest nested items deeper in the folder tree."
+      return "Largest items inside nested folders."
     }
   }
 }
@@ -228,14 +228,14 @@ struct TopItemsPanel: View {
         HStack(spacing: 8) {
           ProgressView()
             .controlSize(.small)
-          Text("Preparing deepest consumers…")
+          Text("Loading nested items…")
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(AppTheme.Colors.textSecondary)
         }
       }
 
       if entries.isEmpty {
-        Text("No items found for this target.")
+        Text("No items found in this scan.")
           .font(AppTheme.Typography.body)
           .foregroundStyle(AppTheme.Colors.textTertiary)
       } else {

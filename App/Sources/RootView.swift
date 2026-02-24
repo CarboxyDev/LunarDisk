@@ -84,7 +84,7 @@ struct RootView: View {
             .font(AppTheme.Typography.heroTitle)
             .foregroundStyle(AppTheme.Colors.textPrimary)
 
-          Text("Choose a full-disk or folder scan. LunarDisk stays local and reads metadata only.")
+          Text("Run a full-disk scan or pick a folder. LunarDisk stays local and reads metadata only.")
             .font(AppTheme.Typography.body)
             .foregroundStyle(AppTheme.Colors.textTertiary)
         }
@@ -146,7 +146,7 @@ struct RootView: View {
     scanActionCard(
       icon: "internaldrive.fill",
       title: "Full-Disk Scan",
-      subtitle: "Fastest path to a complete storage map."
+      subtitle: "Scan your whole drive for a complete storage map."
     ) {
       Button("Scan Macintosh HD") {
         startMacintoshHDScanFlow()
@@ -162,7 +162,7 @@ struct RootView: View {
     return scanActionCard(
       icon: "folder.fill.badge.gearshape",
       title: "Folder Scan",
-      subtitle: "Choose scope first, then run the scan."
+      subtitle: "Pick a folder, then start scanning."
     ) {
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 10) {
@@ -362,7 +362,7 @@ struct RootView: View {
     }
 
     return (
-      title: "Idle",
+      title: "Ready",
       icon: "circle.fill",
       foreground: AppTheme.Colors.textSecondary,
       background: AppTheme.Colors.statusIdleBackground,
@@ -416,11 +416,11 @@ struct RootView: View {
         .font(.system(size: 20, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textSecondary)
 
-      Text("What You Get After a Scan")
+      Text("After You Scan")
         .font(.system(size: 24, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textPrimary)
 
-      Text("The scan output is built to surface storage pressure quickly, with enough detail to act safely.")
+      Text("See where storage is going so cleanup decisions are easier.")
         .font(AppTheme.Typography.body)
         .foregroundStyle(AppTheme.Colors.textTertiary)
 
@@ -429,10 +429,10 @@ struct RootView: View {
         .frame(height: AppTheme.Metrics.dividerHeight)
 
       VStack(alignment: .leading, spacing: 10) {
-        launchPoint("Treemap breakdown of space usage by folder and size", icon: "chart.bar.xaxis")
-        launchPoint("Top items list with direct and deep views", icon: "list.number")
-        launchPoint("Heuristic insights for quick cleanup direction", icon: "lightbulb.fill")
-        launchPoint("No file contents are uploaded or persisted", icon: "lock.shield.fill")
+        launchPoint("Treemap view of space by folder size", icon: "chart.bar.xaxis")
+        launchPoint("Top Items list for direct and nested usage", icon: "list.number")
+        launchPoint("Insights to help prioritize cleanup", icon: "lightbulb.fill")
+        launchPoint("File contents are never uploaded or saved", icon: "lock.shield.fill")
       }
 
       Spacer(minLength: 0)
@@ -462,15 +462,15 @@ struct RootView: View {
         .font(.system(size: 18, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textSecondary)
 
-      Text("Permissions, Done Right")
+      Text("Permissions")
         .font(.system(size: 20, weight: .semibold))
         .foregroundStyle(AppTheme.Colors.textPrimary)
 
-      Text("LunarDisk requests only what it needs. If macOS blocks folders, you can recover with one guided path.")
+      Text("LunarDisk asks only for needed access. If macOS blocks a folder, follow these steps and retry.")
         .font(AppTheme.Typography.body)
         .foregroundStyle(AppTheme.Colors.textTertiary)
 
-      Text("macOS does not have a separate permission for metadata-only reads. During first scan, you may see multiple system prompts for protected locations.")
+      Text("macOS does not offer a metadata-only permission. On first scan, you may see prompts for protected locations.")
         .font(.system(size: 12, weight: .regular))
         .foregroundStyle(AppTheme.Colors.textTertiary)
         .fixedSize(horizontal: false, vertical: true)
@@ -480,9 +480,9 @@ struct RootView: View {
         .frame(height: AppTheme.Metrics.dividerHeight)
 
       VStack(alignment: .leading, spacing: 10) {
-        permissionStep(number: 1, text: "Run Scan Macintosh HD or choose a folder.")
-        permissionStep(number: 2, text: "If access is denied, open Full Disk Access settings.")
-        permissionStep(number: 3, text: "Enable LunarDisk, then rerun your scan.")
+        permissionStep(number: 1, text: "Start a full-disk scan or choose a folder.")
+        permissionStep(number: 2, text: "If access is denied, open Full Disk Access in Settings.")
+        permissionStep(number: 3, text: "Turn on LunarDisk, then run the scan again.")
       }
 
       HStack(spacing: 10) {
@@ -491,7 +491,7 @@ struct RootView: View {
         }
         .buttonStyle(LunarSecondaryButtonStyle())
 
-        Button("Retry Scan") {
+        Button("Try Scan Again") {
           model.startScan()
         }
         .buttonStyle(LunarSecondaryButtonStyle())
@@ -585,7 +585,7 @@ struct RootView: View {
       return (
         "hand.raised.fill",
         "Permission Needed",
-        "macOS blocked access to \(path). Open Full Disk Access, enable LunarDisk, then retry.",
+        "macOS blocked access to \(path). Open Full Disk Access, turn on LunarDisk, then try again.",
         true
       )
     case let .notFound(path):
@@ -599,7 +599,7 @@ struct RootView: View {
       return (
         "exclamationmark.triangle.fill",
         "Scan Failed",
-        "Could not read \(path): \(message)",
+        "Couldn't read \(path): \(message)",
         false
       )
     case let .unknown(message):
@@ -642,11 +642,11 @@ struct RootView: View {
   private var loadingState: some View {
     ScanningStatePanel(
       title: "Scanning Storage",
-      message: "Reading directory metadata and calculating cumulative sizes locally on your Mac.",
+      message: "Reading metadata and calculating folder sizes locally on your Mac.",
       steps: [
-        "Discovering files and folders",
-        "Aggregating nested directory sizes",
-        "Preparing ranked results and insights"
+        "Finding files and folders",
+        "Calculating folder sizes",
+        "Building Top Items and insights"
       ]
     )
   }
@@ -675,7 +675,7 @@ struct RootView: View {
           Text("Storage Breakdown")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textSecondary)
-          Text("Treemap distribution for \(displayName(for: rootNode))")
+          Text("Treemap for \(displayName(for: rootNode))")
             .font(.system(size: 12, weight: .regular))
             .foregroundStyle(AppTheme.Colors.textTertiary)
         }
@@ -699,7 +699,7 @@ struct RootView: View {
         }
       }
 
-      Text(treemapDensity == .clean ? "Clean mode prioritizes large, actionable areas." : "Detailed mode shows deeper nested breakdowns.")
+      Text(treemapDensity == .clean ? "Clean mode shows the biggest areas first." : "Detailed mode shows more of the nested folder structure.")
         .font(.system(size: 11, weight: .regular))
         .foregroundStyle(AppTheme.Colors.textTertiary)
 
@@ -760,7 +760,7 @@ struct RootView: View {
         .foregroundStyle(AppTheme.Colors.textSecondary)
 
       if model.insights.isEmpty {
-        Text("No insights available for this scan.")
+        Text("No insights yet for this scan.")
           .font(AppTheme.Typography.body)
           .foregroundStyle(AppTheme.Colors.textTertiary)
       } else {
@@ -788,7 +788,7 @@ struct RootView: View {
 
   private func chooseFolder() {
     let panel = NSOpenPanel()
-    panel.title = "Choose folder to scan"
+    panel.title = "Choose Folder to Scan"
     panel.prompt = "Select"
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
