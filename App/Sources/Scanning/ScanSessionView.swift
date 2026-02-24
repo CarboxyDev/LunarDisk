@@ -123,17 +123,19 @@ struct ScanSessionView: View {
     "\(phaseID)-\(selectedSection.rawValue)"
   }
 
+  private var canInteractWithSessionTabs: Bool {
+    !isScanning && rootNode != nil
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
       sessionHeader
         .opacity(revealHeader ? 1 : 0)
         .offset(y: revealHeader ? 0 : 12)
 
-      if rootNode != nil {
-        sessionSectionPicker
-          .opacity(revealBody ? 1 : 0)
-          .offset(y: revealBody ? 0 : 10)
-      }
+      sessionSectionPicker
+        .opacity(revealBody ? 1 : 0)
+        .offset(y: revealBody ? 0 : 10)
 
       Group {
         switch phase {
@@ -246,6 +248,7 @@ struct ScanSessionView: View {
         sessionSectionButton(section)
       }
     }
+    .opacity(canInteractWithSessionTabs ? 1 : 0.76)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
@@ -253,6 +256,9 @@ struct ScanSessionView: View {
     let isSelected = section == selectedSection
 
     return Button {
+      guard canInteractWithSessionTabs else {
+        return
+      }
       withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
         selectedSection = section
       }
@@ -287,6 +293,7 @@ struct ScanSessionView: View {
         }
     }
     .buttonStyle(.plain)
+    .disabled(!canInteractWithSessionTabs)
     .accessibilityLabel(section.title)
     .accessibilityAddTraits(isSelected ? [.isSelected] : [])
   }
