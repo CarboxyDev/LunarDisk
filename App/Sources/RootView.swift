@@ -1,55 +1,17 @@
 import AppKit
-import CoreScan
-import LunardiskAI
 import SwiftUI
-import Visualization
 
 struct RootView: View {
-  private enum ResultsLayoutVariant: Hashable {
-    case twoColumn
-    case singleColumn
-  }
-
-  private struct DistributionSectionHeightsPreferenceKey: PreferenceKey {
-    static var defaultValue: [ResultsLayoutVariant: CGFloat] = [:]
-
-    static func reduce(value: inout [ResultsLayoutVariant: CGFloat], nextValue: () -> [ResultsLayoutVariant: CGFloat]) {
-      value.merge(nextValue()) { current, next in
-        max(current, next)
-      }
-    }
-  }
-
-  private enum FocusTarget: Hashable {
-    case folderScanStartButton
-  }
-
-  private enum BreakdownViewMode: String, CaseIterable, Identifiable {
-    case treemap
-    case radial
-
-    var id: String { rawValue }
-  }
-
-  private enum Layout {
-    static let sectionSpacing: CGFloat = 16
-    static let sideColumnWidth: CGFloat = 420
-    static let chartPreferredHeightSingleColumn: CGFloat = 360
-    static let chartPreferredHeightTwoColumn: CGFloat = 320
-    static let chartMinHeight: CGFloat = 260
-    static let chartMaxHeight: CGFloat = 620
-    static let scanActionCardHeight: CGFloat = 164
-    static let scanStatusRowHeight: CGFloat = 34
+  private enum ScanStage {
+    case setup
+    case session
   }
 
   @EnvironmentObject private var onboardingState: OnboardingStateStore
   @StateObject private var model = AppModel()
   @AppStorage(PersistedState.fullDiskScanDisclosureAcknowledgedKey) private var hasAcknowledgedDiskScanDisclosure = false
   @State private var showFullDiskScanDisclosure = false
-  @State private var treemapDensity: TreemapDensity = .clean
-  @State private var breakdownViewMode: BreakdownViewMode = .radial
-  @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
-  @FocusState private var focusedTarget: FocusTarget?
+  @State private var stage: ScanStage = .setup
 
   var body: some View {
     Group {
@@ -71,9 +33,8 @@ struct RootView: View {
       background
 
       ScrollView(.vertical) {
-        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-          controls
-          content
+        VStack(alignment: .leading, spacing: 18) {
+          stageContent
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -82,6 +43,71 @@ struct RootView: View {
     }
     .sheet(isPresented: $showFullDiskScanDisclosure) {
       fullDiskScanDisclosureSheet
+    }
+    .onAppear {
+      syncStageWithModel()
+    }
+    .onChange(of: model.isScanning) { _, _ in
+      syncStageWithModel()
+    }
+    .onChange(of: model.rootNode?.id) { _, _ in
+      syncStageWithModel()
+    }
+    .onChange(of: model.lastFailure) { _, _ in
+      syncStageWithModel()
+    }
+    .animation(.spring(response: 0.42, dampingFraction: 0.9), value: stageIdentity)
+  }
+
+  @ViewBuilder
+  private var stageContent: some View {
+    switch stage {
+    case .setup:
+      ScanSetupView(
+        selectedFolderPath: selectedFolderURL?.path,
+        canStartFolderScan: model.canStartScan,
+        lastFailure: model.lastFailure,
+        onScanMacintoshHD: startMacintoshHDScanFlow,
+        onChooseFolder: chooseFolder,
+        onStartFolderScan: startFolderScan,
+        onOpenFullDiskAccess: openFullDiskAccessSettings
+      )
+      .transition(
+        .asymmetric(
+          insertion: .opacity.combined(with: .move(edge: .leading)),
+          removal: .opacity.combined(with: .move(edge: .top))
+        )
+      )
+
+    case .session:
+      ScanSessionView(
+        selectedURL: model.selectedURL,
+        rootNode: model.rootNode,
+        isScanning: model.isScanning,
+        warningMessage: model.scanWarningMessage,
+        failure: model.lastFailure,
+        canStartScan: model.canStartScan,
+        onCancelScan: model.cancelScan,
+        onRetryScan: startCurrentTargetScan,
+        onBackToSetup: returnToSetup,
+        onOpenFullDiskAccess: openFullDiskAccessSettings,
+        onRevealInFinder: revealInFinder(path:)
+      )
+      .transition(
+        .asymmetric(
+          insertion: .opacity.combined(with: .move(edge: .trailing)),
+          removal: .opacity.combined(with: .move(edge: .bottom))
+        )
+      )
+    }
+  }
+
+  private var stageIdentity: String {
+    switch stage {
+    case .setup:
+      return "setup"
+    case .session:
+      return "session"
     }
   }
 
@@ -100,162 +126,6 @@ struct RootView: View {
       .ignoresSafeArea()
   }
 
-  private var controls: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      HStack(alignment: .firstTextBaseline) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Scan Storage")
-            .font(AppTheme.Typography.heroTitle)
-            .foregroundStyle(AppTheme.Colors.textPrimary)
-
-          Text("Run a full-disk scan or pick a folder. LunarDisk stays local and reads metadata only.")
-            .font(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-        }
-
-        Spacer()
-
-        statusPill()
-      }
-
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: 12) {
-          fullDiskActionCard
-          folderScanActionCard
-        }
-
-        VStack(alignment: .leading, spacing: 12) {
-          fullDiskActionCard
-          folderScanActionCard
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-
-      scanStatusRow
-    }
-    .padding(16)
-    .lunarPanelBackground()
-  }
-
-  private var scanStatusRow: some View {
-    HStack(spacing: 10) {
-      Group {
-        if model.isScanning, let selectedURL = model.selectedURL {
-          Label(scanningTargetText(for: selectedURL), systemImage: "scope")
-            .lineLimit(1)
-        } else {
-          Label("Ready to scan", systemImage: "scope")
-        }
-      }
-      .font(.system(size: 12, weight: .medium))
-      .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      Spacer()
-
-      Button("Cancel Scan") {
-        model.cancelScan()
-      }
-      .buttonStyle(LunarDestructiveButtonStyle())
-      .keyboardShortcut(.cancelAction)
-      .opacity(model.isScanning ? 1 : 0)
-      .allowsHitTesting(model.isScanning)
-      .disabled(!model.isScanning)
-      .accessibilityHidden(!model.isScanning)
-    }
-    .frame(height: Layout.scanStatusRowHeight)
-    .padding(.top, 2)
-  }
-
-  private var fullDiskActionCard: some View {
-    scanActionCard(
-      icon: "internaldrive.fill",
-      title: "Full-Disk Scan",
-      subtitle: "Scan your whole drive for a complete storage map."
-    ) {
-      Button("Scan Macintosh HD") {
-        startMacintoshHDScanFlow()
-      }
-      .buttonStyle(LunarPrimaryButtonStyle())
-      .disabled(model.isScanning)
-    }
-  }
-
-  private var folderScanActionCard: some View {
-    let shouldEmphasizeChooseFolder = selectedFolderURL == nil
-
-    return scanActionCard(
-      icon: "folder.fill.badge.gearshape",
-      title: "Folder Scan",
-      subtitle: "Pick a folder, then start scanning."
-    ) {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 10) {
-          if shouldEmphasizeChooseFolder {
-            Button {
-              chooseFolder()
-            } label: {
-              Label("Choose Folder…", systemImage: "folder.badge.plus")
-            }
-            .buttonStyle(LunarPrimaryButtonStyle())
-            .disabled(model.isScanning)
-            .keyboardShortcut("o", modifiers: [.command])
-          } else {
-            Button {
-              chooseFolder()
-            } label: {
-              Label("Choose Folder…", systemImage: "folder.badge.plus")
-            }
-            .buttonStyle(LunarSecondaryButtonStyle())
-            .disabled(model.isScanning)
-            .keyboardShortcut("o", modifiers: [.command])
-          }
-
-          Button("Scan Selected Folder") {
-            model.startScan()
-          }
-          .buttonStyle(LunarPrimaryButtonStyle())
-          .disabled(!model.canStartScan)
-          .keyboardShortcut(.defaultAction)
-          .focusable()
-          .focused($focusedTarget, equals: .folderScanStartButton)
-        }
-
-        selectedFolderPathSlot
-      }
-    }
-  }
-
-  private var selectedFolderPathSlot: some View {
-    Group {
-      if let selectedFolderURL {
-        Text(selectedFolderURL.path)
-          .font(.system(size: 11, weight: .regular, design: .monospaced))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-          .lineLimit(1)
-      } else {
-        Text(" ")
-          .font(.system(size: 11, weight: .regular, design: .monospaced))
-          .hidden()
-      }
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 7)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .fill(AppTheme.Colors.targetBannerBackground.opacity(selectedFolderURL == nil ? 0 : 1))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(
-              AppTheme.Colors.cardBorder.opacity(selectedFolderURL == nil ? 0 : 1),
-              lineWidth: AppTheme.Metrics.cardBorderWidth
-            )
-        )
-    )
-    .accessibilityHidden(selectedFolderURL == nil)
-    .help(selectedFolderURL?.path ?? "")
-  }
-
   private var selectedFolderURL: URL? {
     guard let selectedURL = model.selectedURL, selectedURL.path != "/" else {
       return nil
@@ -263,601 +133,25 @@ struct RootView: View {
     return selectedURL
   }
 
-  private func scanActionCard<Content: View>(
-    icon: String,
-    title: String,
-    subtitle: String,
-    @ViewBuilder content: () -> Content
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Image(systemName: icon)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-
-        Text(title)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textPrimary)
-      }
-
-      Text(subtitle)
-        .font(.system(size: 12, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      content()
-    }
-    .padding(12)
-    .frame(
-      maxWidth: .infinity,
-      minHeight: Layout.scanActionCardHeight,
-      maxHeight: Layout.scanActionCardHeight,
-      alignment: .topLeading
-    )
-    .background(
-      RoundedRectangle(cornerRadius: 12, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.72))
-        .overlay(
-          RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
+  private func syncStageWithModel() {
+    let shouldShowSession = model.isScanning || model.rootNode != nil || model.lastFailure != nil
+    stage = shouldShowSession ? .session : .setup
   }
 
-  private func scanningTargetText(for url: URL) -> String {
-    if url.path == "/" {
-      return "Scanning Macintosh HD"
+  private func startFolderScan() {
+    guard model.canStartScan else { return }
+    withAnimation {
+      stage = .session
     }
-    return "Scanning \(url.path)"
+    model.startScan()
   }
 
-  private func statusPill() -> some View {
-    let style = statusPillStyle
-
-    return HStack(spacing: 6) {
-      Image(systemName: style.icon)
-        .font(.system(size: 11, weight: .semibold))
-      Text(style.title)
-        .font(.system(size: 12, weight: .semibold))
+  private func startCurrentTargetScan() {
+    guard model.canStartScan else { return }
+    withAnimation {
+      stage = .session
     }
-    .foregroundStyle(style.foreground)
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
-    .background(
-      Capsule(style: .continuous)
-        .fill(style.background)
-        .overlay(
-          Capsule(style: .continuous)
-            .stroke(style.border, lineWidth: 1)
-        )
-        .lunarShimmer(active: style.shouldShimmer)
-    )
-  }
-
-  private var statusPillStyle: (
-    title: String,
-    icon: String,
-    foreground: Color,
-    background: Color,
-    border: Color,
-    shouldShimmer: Bool
-  ) {
-    if model.isScanning {
-      return (
-        title: "Scanning",
-        icon: "waveform.path.ecg",
-        foreground: AppTheme.Colors.textPrimary,
-        background: AppTheme.Colors.statusScanningBackground,
-        border: AppTheme.Colors.cardBorder,
-        shouldShimmer: true
-      )
-    }
-
-    if model.rootNode != nil, model.scanWarningMessage != nil {
-      return (
-        title: "Partial Results",
-        icon: "exclamationmark.triangle.fill",
-        foreground: AppTheme.Colors.statusWarningForeground,
-        background: AppTheme.Colors.statusWarningBackground,
-        border: AppTheme.Colors.statusWarningBorder,
-        shouldShimmer: false
-      )
-    }
-
-    if model.rootNode != nil && model.lastFailure == nil {
-      return (
-        title: "Scan Complete",
-        icon: "checkmark.seal.fill",
-        foreground: AppTheme.Colors.statusSuccessForeground,
-        background: AppTheme.Colors.statusSuccessBackground,
-        border: AppTheme.Colors.statusSuccessBorder,
-        shouldShimmer: false
-      )
-    }
-
-    if model.lastFailure != nil {
-      return (
-        title: "Needs Attention",
-        icon: "exclamationmark.triangle.fill",
-        foreground: AppTheme.Colors.statusWarningForeground,
-        background: AppTheme.Colors.statusWarningBackground,
-        border: AppTheme.Colors.statusWarningBorder,
-        shouldShimmer: false
-      )
-    }
-
-    return (
-      title: "Ready",
-      icon: "circle.fill",
-      foreground: AppTheme.Colors.textSecondary,
-      background: AppTheme.Colors.statusIdleBackground,
-      border: AppTheme.Colors.cardBorder,
-      shouldShimmer: false
-    )
-  }
-
-  private var content: some View {
-    Group {
-      if model.isScanning {
-        loadingState
-      } else if let rootNode = model.rootNode {
-        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-          if let warningMessage = model.scanWarningMessage {
-            partialScanBanner(warningMessage)
-          }
-          resultsContent(rootNode: rootNode)
-        }
-      } else {
-        launchpad
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-  }
-
-  private var launchpad: some View {
-    VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-      if let failure = model.lastFailure {
-        failureBanner(failure)
-      }
-
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-          quickStartCard
-          permissionCard(useFixedWidth: true)
-        }
-
-        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-          quickStartCard
-          permissionCard(useFixedWidth: false)
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-  }
-
-  private var quickStartCard: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Image(systemName: "chart.xyaxis.line")
-        .font(.system(size: 20, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      Text("After You Scan")
-        .font(.system(size: 24, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text("See where storage is going so cleanup decisions are easier.")
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      Divider()
-        .overlay(AppTheme.Colors.divider)
-        .frame(height: AppTheme.Metrics.dividerHeight)
-
-      VStack(alignment: .leading, spacing: 10) {
-        launchPoint("Treemap view of space by folder size", icon: "chart.bar.xaxis")
-        launchPoint("Top Items list for direct and nested usage", icon: "list.number")
-        launchPoint("Insights to help prioritize cleanup", icon: "lightbulb.fill")
-        launchPoint("File contents are never uploaded or saved", icon: "lock.shield.fill")
-      }
-
-      Spacer(minLength: 0)
-    }
-    .padding(20)
-    .frame(maxWidth: .infinity, minHeight: 350, alignment: .topLeading)
-    .lunarPanelBackground()
-  }
-
-  private func launchPoint(_ text: String, icon: String) -> some View {
-    HStack(alignment: .top, spacing: 10) {
-      Image(systemName: icon)
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .frame(width: 16, height: 16)
-
-      Text(text)
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  private func permissionCard(useFixedWidth: Bool) -> some View {
-    let card = VStack(alignment: .leading, spacing: 14) {
-      Image(systemName: "hand.raised.fill")
-        .font(.system(size: 18, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      Text("Permissions")
-        .font(.system(size: 20, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text("LunarDisk asks only for needed access. If macOS blocks a folder, follow these steps and retry.")
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      Text("macOS does not offer a metadata-only permission. On first scan, you may see prompts for protected locations.")
-        .font(.system(size: 12, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      Divider()
-        .overlay(AppTheme.Colors.divider)
-        .frame(height: AppTheme.Metrics.dividerHeight)
-
-      VStack(alignment: .leading, spacing: 10) {
-        permissionStep(number: 1, text: "Start a full-disk scan or choose a folder.")
-        permissionStep(number: 2, text: "If access is denied, open Full Disk Access in Settings.")
-        permissionStep(number: 3, text: "Turn on LunarDisk, then run the scan again.")
-      }
-
-      HStack(spacing: 10) {
-        Button("Open Full Disk Access") {
-          openFullDiskAccessSettings()
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-
-        Button("Try Scan Again") {
-          model.startScan()
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-        .disabled(!model.canStartScan)
-      }
-
-      Spacer(minLength: 0)
-    }
-    .padding(20)
-    .frame(minHeight: 350, alignment: .topLeading)
-    .lunarPanelBackground()
-
-    return Group {
-      if useFixedWidth {
-        card
-          .frame(width: Layout.sideColumnWidth, alignment: .topLeading)
-      } else {
-        card
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-      }
-    }
-  }
-
-  private func permissionStep(number: Int, text: String) -> some View {
-    HStack(alignment: .top, spacing: 10) {
-      Text("\(number)")
-        .font(.system(size: 12, weight: .bold))
-        .foregroundStyle(AppTheme.Colors.accentForeground)
-        .frame(width: 22, height: 22)
-        .background(
-          Circle()
-            .fill(AppTheme.Colors.permissionStepBadgeBackground)
-        )
-
-      Text(text)
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  private func failureBanner(_ failure: AppModel.ScanFailure) -> some View {
-    let copy = failureCopy(for: failure)
-
-    return VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Image(systemName: copy.icon)
-          .font(.system(size: 14, weight: .semibold))
-        Text(copy.title)
-          .font(.system(size: 15, weight: .semibold))
-      }
-      .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text(copy.message)
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      HStack(spacing: 10) {
-        if copy.suggestPermissionRecovery {
-          Button("Open Full Disk Access") {
-            openFullDiskAccessSettings()
-          }
-          .buttonStyle(LunarSecondaryButtonStyle())
-        }
-
-        if model.selectedURL != nil {
-          Button("Retry") {
-            model.startScan()
-          }
-          .buttonStyle(LunarSecondaryButtonStyle())
-          .disabled(model.isScanning)
-        }
-      }
-    }
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-        .fill(AppTheme.Colors.failureBannerBackground)
-        .overlay(
-          RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
-  }
-
-  private func failureCopy(for failure: AppModel.ScanFailure) -> (icon: String, title: String, message: String, suggestPermissionRecovery: Bool) {
-    switch failure {
-    case let .permissionDenied(path):
-      return (
-        "hand.raised.fill",
-        "Permission Needed",
-        "macOS blocked access to \(path). Open Full Disk Access, turn on LunarDisk, then try again.",
-        true
-      )
-    case let .notFound(path):
-      return (
-        "questionmark.folder.fill",
-        "Target Not Found",
-        "The selected path no longer exists: \(path). Choose a new target and scan again.",
-        false
-      )
-    case let .unreadable(path, message):
-      return (
-        "exclamationmark.triangle.fill",
-        "Scan Failed",
-        "Couldn't read \(path): \(message)",
-        false
-      )
-    case let .unknown(message):
-      return (
-        "exclamationmark.triangle.fill",
-        "Scan Failed",
-        message,
-        false
-      )
-    }
-  }
-
-  private func partialScanBanner(_ message: String) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .font(.system(size: 14, weight: .semibold))
-        Text("Partial Results")
-          .font(.system(size: 15, weight: .semibold))
-      }
-      .foregroundStyle(AppTheme.Colors.statusWarningForeground)
-
-      Text(message)
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-        .fill(AppTheme.Colors.statusWarningBackground.opacity(0.45))
-        .overlay(
-          RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
-            .stroke(AppTheme.Colors.statusWarningBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
-  }
-
-  private var loadingState: some View {
-    ScanningStatePanel(
-      title: "Scanning Storage",
-      message: "Reading metadata and calculating folder sizes locally on your Mac.",
-      steps: [
-        "Finding files and folders",
-        "Calculating folder sizes",
-        "Building Top Items"
-      ]
-    )
-  }
-
-  private func resultsContent(rootNode: FileNode) -> some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-        distributionSection(
-          rootNode: rootNode,
-          chartHeight: Layout.chartPreferredHeightTwoColumn,
-          layoutVariant: .twoColumn
-        )
-        supplementalResultsSections(
-          rootNode: rootNode,
-          useFixedWidth: true,
-          targetHeight: distributionSectionHeights[.twoColumn] ?? 0
-        )
-      }
-
-      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-        distributionSection(
-          rootNode: rootNode,
-          chartHeight: Layout.chartPreferredHeightSingleColumn,
-          layoutVariant: .singleColumn
-        )
-        supplementalResultsSections(
-          rootNode: rootNode,
-          useFixedWidth: false,
-          targetHeight: distributionSectionHeights[.singleColumn] ?? 0
-        )
-      }
-    }
-    .onPreferenceChange(DistributionSectionHeightsPreferenceKey.self) { heights in
-      distributionSectionHeights.merge(heights) { current, next in
-        max(current, next)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-  }
-
-  private func distributionSection(
-    rootNode: FileNode,
-    chartHeight: CGFloat,
-    layoutVariant: ResultsLayoutVariant
-  ) -> some View {
-    let clampedChartHeight = min(max(chartHeight, Layout.chartMinHeight), Layout.chartMaxHeight)
-    let effectiveChartHeight = breakdownViewMode == .radial
-      ? min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
-      : clampedChartHeight
-
-    return VStack(alignment: .leading, spacing: 12) {
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Storage Breakdown")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-          Text("\(breakdownViewTitle) for \(displayName(for: rootNode))")
-            .font(.system(size: 12, weight: .regular))
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-        }
-
-        Spacer()
-
-        VStack(alignment: .trailing, spacing: 8) {
-          Picker("Breakdown View", selection: $breakdownViewMode) {
-            Text("Radial")
-              .tag(BreakdownViewMode.radial)
-            Text("Treemap")
-              .tag(BreakdownViewMode.treemap)
-          }
-          .pickerStyle(.segmented)
-          .labelsHidden()
-          .frame(width: 206)
-
-          if breakdownViewMode == .treemap {
-            Picker("Treemap Density", selection: $treemapDensity) {
-              Text("Clean")
-                .tag(TreemapDensity.clean)
-              Text("Detailed")
-                .tag(TreemapDensity.detailed)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 186)
-          }
-
-          Text(ByteFormatter.string(from: rootNode.sizeBytes))
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-        }
-      }
-
-      Text(breakdownHelperText)
-        .font(.system(size: 11, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      Group {
-        if breakdownViewMode == .treemap {
-          TreemapChartView(
-            root: rootNode,
-            palette: AppTheme.Colors.chartPalette,
-            density: treemapDensity
-          )
-        } else {
-          RadialBreakdownChartView(
-            root: rootNode,
-            palette: AppTheme.Colors.chartPalette
-          )
-        }
-      }
-        .frame(maxWidth: .infinity)
-        .frame(height: effectiveChartHeight)
-        .background(
-          RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
-            .overlay(
-              RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(AppTheme.Colors.cardBorder.opacity(0.8), lineWidth: AppTheme.Metrics.cardBorderWidth)
-            )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-    .lunarPanelBackground()
-    .background(
-      GeometryReader { proxy in
-        Color.clear.preference(
-          key: DistributionSectionHeightsPreferenceKey.self,
-          value: [layoutVariant: proxy.size.height]
-        )
-      }
-    )
-  }
-
-  private var breakdownHelperText: String {
-    switch breakdownViewMode {
-    case .treemap:
-      return treemapDensity == .clean
-        ? "Clean mode shows the biggest areas first."
-        : "Detailed mode shows more of the nested folder structure."
-    case .radial:
-      return "Radial mode shows hierarchy from the center outward. Hover or click slices to inspect nested folders."
-    }
-  }
-
-  private var breakdownViewTitle: String {
-    switch breakdownViewMode {
-    case .treemap:
-      return "Treemap"
-    case .radial:
-      return "Radial"
-    }
-  }
-
-  private func supplementalResultsSections(
-    rootNode: FileNode,
-    useFixedWidth: Bool,
-    targetHeight: CGFloat
-  ) -> some View {
-    let sections = TopItemsPanel(
-      rootNode: rootNode,
-      onRevealInFinder: revealInFinder(path:),
-      targetHeight: targetHeight
-    )
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-
-    return Group {
-      if useFixedWidth {
-        sections
-          .frame(width: Layout.sideColumnWidth, alignment: .topLeading)
-      } else {
-        sections
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-      }
-    }
-  }
-
-  private func displayName(for node: FileNode) -> String {
-    if node.path == "/" {
-      return "Macintosh HD"
-    }
-    if node.name.isEmpty {
-      return node.path
-    }
-    return node.name
+    model.startScan()
   }
 
   private func chooseFolder() {
@@ -871,21 +165,30 @@ struct RootView: View {
 
     if panel.runModal() == .OK {
       model.selectScanTarget(panel.url)
-      focusFolderScanStartButtonAfterSelection()
     }
   }
 
-  private func focusFolderScanStartButtonAfterSelection() {
-    Task { @MainActor in
-      await Task.yield()
-      guard model.canStartScan else { return }
-      focusedTarget = .folderScanStartButton
-
-      // NSOpenPanel dismissal can briefly steal first responder; retry once.
-      try? await Task.sleep(nanoseconds: 120_000_000)
-      guard model.canStartScan else { return }
-      focusedTarget = .folderScanStartButton
+  private func returnToSetup() {
+    model.cancelScan()
+    model.selectScanTarget(nil)
+    withAnimation {
+      stage = .setup
     }
+  }
+
+  private func startMacintoshHDScanFlow() {
+    if hasAcknowledgedDiskScanDisclosure {
+      beginFullDiskScan()
+      return
+    }
+    showFullDiskScanDisclosure = true
+  }
+
+  private func beginFullDiskScan() {
+    withAnimation {
+      stage = .session
+    }
+    model.scanMacintoshHD()
   }
 
   private var fullDiskScanDisclosureSheet: some View {
@@ -945,7 +248,7 @@ struct RootView: View {
         Button("Continue Scan") {
           hasAcknowledgedDiskScanDisclosure = true
           showFullDiskScanDisclosure = false
-          model.scanMacintoshHD()
+          beginFullDiskScan()
         }
         .buttonStyle(LunarPrimaryButtonStyle())
 
@@ -988,14 +291,6 @@ struct RootView: View {
         .foregroundStyle(AppTheme.Colors.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
     }
-  }
-
-  private func startMacintoshHDScanFlow() {
-    if hasAcknowledgedDiskScanDisclosure {
-      model.scanMacintoshHD()
-      return
-    }
-    showFullDiskScanDisclosure = true
   }
 
   private func openFullDiskAccessSettings() {
