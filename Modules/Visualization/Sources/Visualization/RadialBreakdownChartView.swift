@@ -458,13 +458,26 @@ public struct RadialBreakdownChartView: View {
     if arc.isAggregate {
       return Color.gray
     }
+    let stableIDHash = stableHash64(of: arc.id)
     let familyIndex = abs(arc.branchIndex) % palette.count
-    let siblingOffset = abs(arc.id.hashValue) % 3
+    let siblingOffset = Int(stableIDHash % 3)
     let depthOffset = max(arc.depth - 1, 0)
     let paletteIndex = (familyIndex + siblingOffset + depthOffset) % palette.count
     let base = palette[paletteIndex]
     let depthShift = min(Double(max(arc.depth - 1, 0)) * 0.035, 0.18)
     return base.opacity(1 - depthShift)
+  }
+
+  private func stableHash64(of value: String) -> UInt64 {
+    var hash: UInt64 = 1_469_598_103_934_665_603
+    let prime: UInt64 = 1_099_511_628_211
+
+    for byte in value.utf8 {
+      hash ^= UInt64(byte)
+      hash &*= prime
+    }
+
+    return hash
   }
 
   private func isRelated(arcID: String, activeArcID: String) -> Bool {
