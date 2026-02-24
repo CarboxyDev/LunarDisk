@@ -30,7 +30,7 @@
 - Never collect, transmit, or persist file contents.
 - Persist only app settings and optional scan metadata needed for UX.
 
-## Non-Goals (v1)
+## Non-Goals for now
 - Cloud sync or remote processing.
 - Auto-delete/auto-clean operations.
 - Cross-platform support.

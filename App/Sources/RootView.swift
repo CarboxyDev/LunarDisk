@@ -9,6 +9,13 @@ struct RootView: View {
     case folderScanStartButton
   }
 
+  private enum BreakdownViewMode: String, CaseIterable, Identifiable {
+    case treemap
+    case radial
+
+    var id: String { rawValue }
+  }
+
   private enum Layout {
     static let sectionSpacing: CGFloat = 16
     static let sideColumnWidth: CGFloat = 420
@@ -25,6 +32,7 @@ struct RootView: View {
   @AppStorage(PersistedState.fullDiskScanDisclosureAcknowledgedKey) private var hasAcknowledgedDiskScanDisclosure = false
   @State private var showFullDiskScanDisclosure = false
   @State private var treemapDensity: TreemapDensity = .clean
+  @State private var breakdownViewMode: BreakdownViewMode = .treemap
   @FocusState private var focusedTarget: FocusTarget?
 
   var body: some View {
@@ -668,6 +676,9 @@ struct RootView: View {
 
   private func distributionSection(rootNode: FileNode, chartHeight: CGFloat) -> some View {
     let clampedChartHeight = min(max(chartHeight, Layout.chartMinHeight), Layout.chartMaxHeight)
+    let effectiveChartHeight = breakdownViewMode == .radial
+      ? min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
+      : clampedChartHeight
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -675,23 +686,35 @@ struct RootView: View {
           Text("Storage Breakdown")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textSecondary)
-          Text("Treemap for \(displayName(for: rootNode))")
+          Text("\(breakdownViewTitle) for \(displayName(for: rootNode))")
             .font(.system(size: 12, weight: .regular))
             .foregroundStyle(AppTheme.Colors.textTertiary)
         }
 
         Spacer()
 
-        HStack(spacing: 10) {
-          Picker("Treemap Density", selection: $treemapDensity) {
-            Text("Clean")
-              .tag(TreemapDensity.clean)
-            Text("Detailed")
-              .tag(TreemapDensity.detailed)
+        VStack(alignment: .trailing, spacing: 8) {
+          Picker("Breakdown View", selection: $breakdownViewMode) {
+            Text("Treemap")
+              .tag(BreakdownViewMode.treemap)
+            Text("Radial")
+              .tag(BreakdownViewMode.radial)
           }
           .pickerStyle(.segmented)
           .labelsHidden()
-          .frame(width: 186)
+          .frame(width: 206)
+
+          if breakdownViewMode == .treemap {
+            Picker("Treemap Density", selection: $treemapDensity) {
+              Text("Clean")
+                .tag(TreemapDensity.clean)
+              Text("Detailed")
+                .tag(TreemapDensity.detailed)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 186)
+          }
 
           Text(ByteFormatter.string(from: rootNode.sizeBytes))
             .font(.system(size: 13, weight: .semibold))
@@ -699,17 +722,26 @@ struct RootView: View {
         }
       }
 
-      Text(treemapDensity == .clean ? "Clean mode shows the biggest areas first." : "Detailed mode shows more of the nested folder structure.")
+      Text(breakdownHelperText)
         .font(.system(size: 11, weight: .regular))
         .foregroundStyle(AppTheme.Colors.textTertiary)
 
-      TreemapChartView(
-        root: rootNode,
-        palette: AppTheme.Colors.chartPalette,
-        density: treemapDensity
-      )
+      Group {
+        if breakdownViewMode == .treemap {
+          TreemapChartView(
+            root: rootNode,
+            palette: AppTheme.Colors.chartPalette,
+            density: treemapDensity
+          )
+        } else {
+          RadialBreakdownChartView(
+            root: rootNode,
+            palette: AppTheme.Colors.chartPalette
+          )
+        }
+      }
         .frame(maxWidth: .infinity)
-        .frame(height: clampedChartHeight)
+        .frame(height: effectiveChartHeight)
         .background(
           RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
@@ -718,11 +750,32 @@ struct RootView: View {
                 .stroke(AppTheme.Colors.cardBorder.opacity(0.8), lineWidth: AppTheme.Metrics.cardBorderWidth)
             )
         )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
     .padding(16)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .lunarPanelBackground()
+  }
+
+  private var breakdownHelperText: String {
+    switch breakdownViewMode {
+    case .treemap:
+      return treemapDensity == .clean
+        ? "Clean mode shows the biggest areas first."
+        : "Detailed mode shows more of the nested folder structure."
+    case .radial:
+      return "Radial mode emphasizes hierarchy. The center shows total size; inspect details in the side panel."
+    }
+  }
+
+  private var breakdownViewTitle: String {
+    switch breakdownViewMode {
+    case .treemap:
+      return "Treemap"
+    case .radial:
+      return "Radial"
+    }
   }
 
   private func supplementalResultsSections(rootNode: FileNode, useFixedWidth: Bool) -> some View {
