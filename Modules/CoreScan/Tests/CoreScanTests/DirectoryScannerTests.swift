@@ -79,10 +79,13 @@ final class DirectoryScannerTests: XCTestCase {
 
     let scanner = DirectoryScanner()
     let result = try await scanner.scan(at: root, maxDepth: nil)
+    let diagnostics = await scanner.lastScanDiagnostics()
 
     XCTAssertEqual(result.sizeBytes, 5)
     XCTAssertEqual(result.children.count, 1)
     XCTAssertEqual(result.children.first?.name, "visible.txt")
+    XCTAssertTrue((diagnostics?.skippedItemCount ?? 0) >= 1)
+    XCTAssertFalse((diagnostics?.sampledSkippedPaths ?? []).isEmpty)
   }
 
   func testScanCancellationThrowsCancellationError() async throws {
@@ -161,6 +164,7 @@ final class DirectoryScannerTests: XCTestCase {
 
     let scanner = DirectoryScanner()
     let result = try await scanner.scan(at: root, maxDepth: 2)
+    let diagnostics = await scanner.lastScanDiagnostics()
 
     XCTAssertEqual(result.sizeBytes, 11)
     XCTAssertEqual(result.children.count, 1)
@@ -168,6 +172,7 @@ final class DirectoryScannerTests: XCTestCase {
     XCTAssertEqual(result.children.first?.children.count, 1)
     XCTAssertEqual(result.children.first?.children.first?.sizeBytes, 11)
     XCTAssertTrue(result.children.first?.children.first?.children.isEmpty == true)
+    XCTAssertFalse(diagnostics?.isPartialResult == true)
   }
 
   func testSortedChildrenBySizeBreaksTiesDeterministically() {

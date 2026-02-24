@@ -17,6 +17,7 @@ final class AppModel: ObservableObject {
   @Published var isScanning = false
   @Published var errorMessage: String?
   @Published var lastFailure: ScanFailure?
+  @Published var scanWarningMessage: String?
 
   private let scanner: any FileScanning
   private let analyzer: any AIAnalyzing
@@ -47,6 +48,7 @@ final class AppModel: ObservableObject {
     insights = []
     errorMessage = nil
     lastFailure = nil
+    scanWarningMessage = nil
   }
 
   func scanMacintoshHD() {
@@ -75,6 +77,7 @@ final class AppModel: ObservableObject {
     insightsTask?.cancel()
     insightsTask = nil
     isScanning = false
+    scanWarningMessage = nil
   }
 
   private func scan(url: URL, scanID: UUID) async {
@@ -90,6 +93,7 @@ final class AppModel: ObservableObject {
     errorMessage = nil
     insights = []
     lastFailure = nil
+    scanWarningMessage = nil
 
     do {
       try Task.checkCancellation()
@@ -98,6 +102,9 @@ final class AppModel: ObservableObject {
       guard activeScanID == scanID else { return }
 
       rootNode = scannedRoot
+      let diagnostics = await scanner.lastScanDiagnostics()
+      guard activeScanID == scanID else { return }
+      scanWarningMessage = Self.warningMessage(from: diagnostics)
       isScanning = false
 
       let analyzer = self.analyzer
@@ -120,6 +127,7 @@ final class AppModel: ObservableObject {
       rootNode = nil
       errorMessage = error.localizedDescription
       lastFailure = classify(error: error)
+      scanWarningMessage = nil
     }
   }
 
@@ -152,5 +160,18 @@ final class AppModel: ObservableObject {
       return true
     }
     return false
+  }
+
+  private static func warningMessage(from diagnostics: ScanDiagnostics?) -> String? {
+    guard let diagnostics, diagnostics.isPartialResult else {
+      return nil
+    }
+    let skippedCount = diagnostics.skippedItemCount
+    if let firstSample = diagnostics.sampledSkippedPaths.first {
+      let suffix = skippedCount == 1 ? "" : "s"
+      return "Partial scan: skipped \(skippedCount) unreadable item\(suffix). Totals may be lower than actual usage. Example: \(firstSample)"
+    }
+    let suffix = skippedCount == 1 ? "" : "s"
+    return "Partial scan: skipped \(skippedCount) unreadable item\(suffix). Totals may be lower than actual usage."
   }
 }

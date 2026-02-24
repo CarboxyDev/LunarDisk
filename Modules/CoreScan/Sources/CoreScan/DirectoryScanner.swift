@@ -1,7 +1,28 @@
 import Foundation
 
+public struct ScanDiagnostics: Equatable, Sendable {
+  public let skippedItemCount: Int
+  public let sampledSkippedPaths: [String]
+
+  public init(skippedItemCount: Int = 0, sampledSkippedPaths: [String] = []) {
+    self.skippedItemCount = skippedItemCount
+    self.sampledSkippedPaths = sampledSkippedPaths
+  }
+
+  public var isPartialResult: Bool {
+    skippedItemCount > 0
+  }
+}
+
 public protocol FileScanning: Sendable {
   func scan(at url: URL, maxDepth: Int?) async throws -> FileNode
+  func lastScanDiagnostics() async -> ScanDiagnostics?
+}
+
+public extension FileScanning {
+  func lastScanDiagnostics() async -> ScanDiagnostics? {
+    nil
+  }
 }
 
 public enum ScanError: Error, LocalizedError {
@@ -20,6 +41,7 @@ public enum ScanError: Error, LocalizedError {
 
 public actor DirectoryScanner: FileScanning {
   private let fileManager: FileManager
+  private let sampledSkippedPathsLimit = 5
   private let keys: Set<URLResourceKey> = [
     .isDirectoryKey,
     .isSymbolicLinkKey,
@@ -27,22 +49,45 @@ public actor DirectoryScanner: FileScanning {
     .totalFileAllocatedSizeKey,
     .fileAllocatedSizeKey
   ]
+  private var skippedItemCount = 0
+  private var sampledSkippedPaths: [String] = []
+  private var latestScanDiagnostics: ScanDiagnostics?
 
   public init(fileManager: FileManager = .default) {
     self.fileManager = fileManager
   }
 
   public func scan(at url: URL, maxDepth: Int? = nil) async throws -> FileNode {
+    resetDiagnostics()
     try Task.checkCancellation()
     guard fileManager.fileExists(atPath: url.path) else {
       throw ScanError.notFound(path: url.path)
     }
-    return try await scanNode(at: url, depth: 0, maxDepth: maxDepth)
+    let root = try await scanNode(at: url, depth: 0, maxDepth: maxDepth)
+    latestScanDiagnostics = ScanDiagnostics(
+      skippedItemCount: skippedItemCount,
+      sampledSkippedPaths: sampledSkippedPaths
+    )
+    return root
   }
 
-  private func scanNode(at url: URL, depth: Int, maxDepth: Int?) async throws -> FileNode {
+  public func lastScanDiagnostics() async -> ScanDiagnostics? {
+    latestScanDiagnostics
+  }
+
+  private func scanNode(
+    at url: URL,
+    depth: Int,
+    maxDepth: Int?,
+    preloadedValues: URLResourceValues? = nil
+  ) async throws -> FileNode {
     try Task.checkCancellation()
-    let values = try resourceValues(for: url)
+    let values: URLResourceValues
+    if let preloadedValues {
+      values = preloadedValues
+    } else {
+      values = try resourceValues(for: url)
+    }
     let name = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
     let isDirectory = values.isDirectory ?? false
 
@@ -91,6 +136,7 @@ public actor DirectoryScanner: FileScanning {
         childValues = try resourceValues(for: childURL)
       } catch {
         if shouldSkip(error: error) {
+          noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
           continue
         }
         throw error
@@ -99,10 +145,16 @@ public actor DirectoryScanner: FileScanning {
         continue
       }
       do {
-        let childNode = try await scanNode(at: childURL, depth: depth + 1, maxDepth: maxDepth)
+        let childNode = try await scanNode(
+          at: childURL,
+          depth: depth + 1,
+          maxDepth: maxDepth,
+          preloadedValues: childValues
+        )
         children.append(childNode)
       } catch {
         if shouldSkip(error: error) {
+          noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
           continue
         }
         throw error
@@ -129,9 +181,7 @@ public actor DirectoryScanner: FileScanning {
         at: url,
         includingPropertiesForKeys: Array(keys),
         options: [.skipsPackageDescendants]
-      ).sorted { lhs, rhs in
-        lhs.path < rhs.path
-      }
+      )
       var total: Int64 = 0
       for childURL in childURLs {
         try Task.checkCancellation()
@@ -140,6 +190,7 @@ public actor DirectoryScanner: FileScanning {
           values = try resourceValues(for: childURL)
         } catch {
           if shouldSkip(error: error) {
+            noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
             continue
           }
           throw error
@@ -152,6 +203,7 @@ public actor DirectoryScanner: FileScanning {
             total += try recursiveDirectorySize(at: childURL)
           } catch {
             if shouldSkip(error: error) {
+              noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
               continue
             }
             throw error
@@ -215,5 +267,29 @@ public actor DirectoryScanner: FileScanning {
     }
 
     return false
+  }
+
+  private func resetDiagnostics() {
+    skippedItemCount = 0
+    sampledSkippedPaths = []
+    latestScanDiagnostics = nil
+  }
+
+  private func noteSkipped(path: String) {
+    skippedItemCount += 1
+    if sampledSkippedPaths.count < sampledSkippedPathsLimit {
+      sampledSkippedPaths.append(path)
+    }
+  }
+
+  private func skippedPath(from error: Error, fallbackPath: String) -> String {
+    switch error {
+    case let ScanError.notFound(path):
+      return path
+    case let ScanError.unreadable(path, _):
+      return path
+    default:
+      return fallbackPath
+    }
   }
 }

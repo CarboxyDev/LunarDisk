@@ -50,6 +50,24 @@ final class LunardiskTests: XCTestCase {
     }
   }
 
+  actor ImmediateScannerWithDiagnostics: FileScanning {
+    private let node: FileNode
+    private let diagnostics: ScanDiagnostics?
+
+    init(node: FileNode, diagnostics: ScanDiagnostics?) {
+      self.node = node
+      self.diagnostics = diagnostics
+    }
+
+    func scan(at url: URL, maxDepth: Int?) async throws -> FileNode {
+      node
+    }
+
+    func lastScanDiagnostics() async -> ScanDiagnostics? {
+      diagnostics
+    }
+  }
+
   actor SlowCancelableAnalyzer: AIAnalyzing {
     private var observedCancellation = false
 
@@ -77,6 +95,7 @@ final class LunardiskTests: XCTestCase {
     XCTAssertTrue(model.insights.isEmpty)
     XCTAssertFalse(model.isScanning)
     XCTAssertNil(model.errorMessage)
+    XCTAssertNil(model.scanWarningMessage)
   }
 
   func testOnboardingStateStorePersistsCompletionAndReset() {
@@ -127,6 +146,7 @@ final class LunardiskTests: XCTestCase {
     model.insights = [Insight(severity: .info, message: "sample")]
     model.errorMessage = "error"
     model.lastFailure = .unknown(message: "fail")
+    model.scanWarningMessage = "partial"
 
     let target = URL(fileURLWithPath: "/Users", isDirectory: true)
     model.selectScanTarget(target)
@@ -136,6 +156,7 @@ final class LunardiskTests: XCTestCase {
     XCTAssertTrue(model.insights.isEmpty)
     XCTAssertNil(model.errorMessage)
     XCTAssertNil(model.lastFailure)
+    XCTAssertNil(model.scanWarningMessage)
   }
 
   func testCancelScanIgnoresLateScannerResult() async {
@@ -247,6 +268,25 @@ final class LunardiskTests: XCTestCase {
 
     XCTAssertTrue(didObserveCancellation)
     XCTAssertTrue(model.insights.isEmpty)
+  }
+
+  func testScanPublishesPartialResultsWarningFromDiagnostics() async {
+    let root = FileNode(name: "root", path: "/tmp/root", isDirectory: true, sizeBytes: 128)
+    let diagnostics = ScanDiagnostics(
+      skippedItemCount: 2,
+      sampledSkippedPaths: ["/tmp/root/private"]
+    )
+    let scanner = ImmediateScannerWithDiagnostics(node: root, diagnostics: diagnostics)
+    let analyzer = ControlledAnalyzer(output: [])
+    let model = AppModel(scanner: scanner, analyzer: analyzer)
+    let target = URL(fileURLWithPath: "/tmp/root", isDirectory: true)
+
+    model.selectScanTarget(target)
+    model.startScan()
+    await waitForRootNode(model, expectedPath: "/tmp/root")
+
+    XCTAssertNotNil(model.scanWarningMessage)
+    XCTAssertTrue(model.scanWarningMessage?.contains("skipped 2 unreadable items") == true)
   }
 
   func testTopConsumersStoreRefreshesWhenTreeChangesButRootSummaryMatches() async {

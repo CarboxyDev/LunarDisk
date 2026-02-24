@@ -328,6 +328,17 @@ struct RootView: View {
       )
     }
 
+    if model.rootNode != nil, model.scanWarningMessage != nil {
+      return (
+        title: "Partial Results",
+        icon: "exclamationmark.triangle.fill",
+        foreground: AppTheme.Colors.statusWarningForeground,
+        background: AppTheme.Colors.statusWarningBackground,
+        border: AppTheme.Colors.statusWarningBorder,
+        shouldShimmer: false
+      )
+    }
+
     if model.rootNode != nil && model.lastFailure == nil {
       return (
         title: "Scan Complete",
@@ -365,7 +376,12 @@ struct RootView: View {
       if model.isScanning {
         loadingState
       } else if let rootNode = model.rootNode {
-        resultsContent(rootNode: rootNode)
+        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+          if let warningMessage = model.scanWarningMessage {
+            partialScanBanner(warningMessage)
+          }
+          resultsContent(rootNode: rootNode)
+        }
       } else {
         launchpad
       }
@@ -594,6 +610,33 @@ struct RootView: View {
         false
       )
     }
+  }
+
+  private func partialScanBanner(_ message: String) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.system(size: 14, weight: .semibold))
+        Text("Partial Results")
+          .font(.system(size: 15, weight: .semibold))
+      }
+      .foregroundStyle(AppTheme.Colors.statusWarningForeground)
+
+      Text(message)
+        .font(AppTheme.Typography.body)
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
+        .fill(AppTheme.Colors.statusWarningBackground.opacity(0.45))
+        .overlay(
+          RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
+            .stroke(AppTheme.Colors.statusWarningBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
+        )
+    )
   }
 
   private var loadingState: some View {
