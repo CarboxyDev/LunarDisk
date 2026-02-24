@@ -5,6 +5,10 @@ import SwiftUI
 import Visualization
 
 struct RootView: View {
+  private enum FocusTarget: Hashable {
+    case folderScanStartButton
+  }
+
   private enum TopConsumersMode: String, CaseIterable, Identifiable {
     case directChildren
     case deepestConsumers
@@ -56,6 +60,61 @@ struct RootView: View {
     var id: String { node.id }
   }
 
+  private struct TopItemsRow: View {
+    let entry: TopConsumerEntry
+    let onReveal: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+      HStack(spacing: 10) {
+        Image(systemName: entry.node.isDirectory ? "folder.fill" : "doc.fill")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+          .frame(width: 14)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(entry.node.name)
+            .font(AppTheme.Typography.body)
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .lineLimit(1)
+        }
+
+        Spacer()
+
+        Button(action: onReveal) {
+          Image(systemName: "arrow.up.forward.square")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .frame(width: 18, height: 18)
+            .background(
+              RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(AppTheme.Colors.surfaceElevated.opacity(0.75))
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Reveal in Finder")
+        .opacity(isHovered ? 1 : 0)
+        .disabled(!isHovered)
+        .accessibilityHidden(!isHovered)
+
+        Text(ByteFormatter.string(from: entry.node.sizeBytes))
+          .font(AppTheme.Typography.body)
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+      }
+      .help(entry.node.path)
+      .contextMenu {
+        Button("Reveal in Finder", action: onReveal)
+      }
+      .onHover { isHovering in
+        isHovered = isHovering
+      }
+      .padding(.vertical, 4)
+      .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2))
+      .listRowBackground(Color.clear)
+    }
+  }
+
   @EnvironmentObject private var onboardingState: OnboardingStateStore
   @StateObject private var model = AppModel()
   @AppStorage("hasAcknowledgedDiskScanDisclosure") private var hasAcknowledgedDiskScanDisclosure = false
@@ -64,6 +123,7 @@ struct RootView: View {
   @State private var topConsumersCache: [TopConsumersMode: [TopConsumerEntry]] = [:]
   @State private var topConsumersCacheRootID: String?
   @State private var topConsumersCacheTask: Task<Void, Never>?
+  @FocusState private var focusedTarget: FocusTarget?
 
   var body: some View {
     Group {
@@ -167,6 +227,7 @@ struct RootView: View {
         model.cancelScan()
       }
       .buttonStyle(LunarDestructiveButtonStyle())
+      .keyboardShortcut(.cancelAction)
       .opacity(model.isScanning ? 1 : 0)
       .allowsHitTesting(model.isScanning)
       .disabled(!model.isScanning)
@@ -191,24 +252,43 @@ struct RootView: View {
   }
 
   private var folderScanActionCard: some View {
-    scanActionCard(
+    let shouldEmphasizeChooseFolder = selectedFolderURL == nil
+
+    return scanActionCard(
       icon: "folder.fill.badge.gearshape",
       title: "Folder Scan",
       subtitle: "Choose scope first, then run the scan."
     ) {
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 10) {
-          Button("Choose Folder…") {
-            chooseFolder()
+          if shouldEmphasizeChooseFolder {
+            Button {
+              chooseFolder()
+            } label: {
+              Label("Choose Folder…", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(LunarPrimaryButtonStyle())
+            .disabled(model.isScanning)
+            .keyboardShortcut("o", modifiers: [.command])
+          } else {
+            Button {
+              chooseFolder()
+            } label: {
+              Label("Choose Folder…", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(LunarSecondaryButtonStyle())
+            .disabled(model.isScanning)
+            .keyboardShortcut("o", modifiers: [.command])
           }
-          .buttonStyle(LunarSecondaryButtonStyle())
-          .disabled(model.isScanning)
 
           Button("Scan Selected Folder") {
             model.startScan()
           }
           .buttonStyle(LunarPrimaryButtonStyle())
           .disabled(!model.canStartScan)
+          .keyboardShortcut(.defaultAction)
+          .focusable()
+          .focused($focusedTarget, equals: .folderScanStartButton)
         }
 
         selectedFolderPathSlot
@@ -244,6 +324,7 @@ struct RootView: View {
         )
     )
     .accessibilityHidden(selectedFolderURL == nil)
+    .help(selectedFolderURL?.path ?? "")
   }
 
   private var selectedFolderURL: URL? {
@@ -740,29 +821,9 @@ struct RootView: View {
           .foregroundStyle(AppTheme.Colors.textTertiary)
       } else {
         List(items) { entry in
-          HStack(spacing: 10) {
-            Image(systemName: entry.node.isDirectory ? "folder.fill" : "doc.fill")
-              .font(.system(size: 12, weight: .semibold))
-              .foregroundStyle(AppTheme.Colors.textSecondary)
-              .frame(width: 14)
-
-            VStack(alignment: .leading, spacing: 2) {
-              Text(entry.node.name)
-                .font(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.textPrimary)
-                .lineLimit(1)
-            }
-
-            Spacer()
-
-            Text(ByteFormatter.string(from: entry.node.sizeBytes))
-              .font(AppTheme.Typography.body)
-              .foregroundStyle(AppTheme.Colors.textSecondary)
+          TopItemsRow(entry: entry) {
+            revealInFinder(path: entry.node.path)
           }
-          .help(entry.node.path)
-          .padding(.vertical, 4)
-          .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2))
-          .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -979,6 +1040,20 @@ struct RootView: View {
 
     if panel.runModal() == .OK {
       model.selectScanTarget(panel.url)
+      focusFolderScanStartButtonAfterSelection()
+    }
+  }
+
+  private func focusFolderScanStartButtonAfterSelection() {
+    Task { @MainActor in
+      await Task.yield()
+      guard model.canStartScan else { return }
+      focusedTarget = .folderScanStartButton
+
+      // NSOpenPanel dismissal can briefly steal first responder; retry once.
+      try? await Task.sleep(nanoseconds: 120_000_000)
+      guard model.canStartScan else { return }
+      focusedTarget = .folderScanStartButton
     }
   }
 
@@ -1105,6 +1180,12 @@ struct RootView: View {
         return
       }
     }
+  }
+
+  private func revealInFinder(path: String) {
+    let url = URL(fileURLWithPath: path)
+    guard FileManager.default.fileExists(atPath: path) else { return }
+    NSWorkspace.shared.activateFileViewerSelecting([url])
   }
 }
 
