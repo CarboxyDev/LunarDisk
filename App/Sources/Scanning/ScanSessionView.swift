@@ -43,8 +43,8 @@ struct ScanSessionView: View {
     static var defaultValue: [ResultsLayoutVariant: CGFloat] = [:]
 
     static func reduce(value: inout [ResultsLayoutVariant: CGFloat], nextValue: () -> [ResultsLayoutVariant: CGFloat]) {
-      value.merge(nextValue()) { current, next in
-        max(current, next)
+      value.merge(nextValue()) { _, next in
+        next
       }
     }
   }
@@ -724,8 +724,8 @@ struct ScanSessionView: View {
       }
     }
     .onPreferenceChange(DistributionSectionHeightsPreferenceKey.self) { heights in
-      distributionSectionHeights.merge(heights) { current, next in
-        max(current, next)
+      distributionSectionHeights.merge(heights) { _, next in
+        next
       }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -737,9 +737,7 @@ struct ScanSessionView: View {
     layoutVariant: ResultsLayoutVariant
   ) -> some View {
     let clampedChartHeight = min(max(chartHeight, Layout.chartMinHeight), Layout.chartMaxHeight)
-    let effectiveChartHeight = breakdownViewMode == .radial
-      ? min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
-      : clampedChartHeight
+    let effectiveChartHeight = min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .top, spacing: 12) {
@@ -763,17 +761,16 @@ struct ScanSessionView: View {
         }
       }
 
-      HStack(alignment: .center, spacing: 10) {
-        Text(breakdownHelperText)
-          .font(.system(size: 11, weight: .regular))
-          .foregroundStyle(AppTheme.Colors.textTertiary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-
-        if breakdownViewMode == .treemap {
-          treemapDensityControl
-            .transition(.opacity.combined(with: .move(edge: .trailing)))
+      Text(breakdownHelperText)
+        .font(.system(size: 11, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .trailing) {
+          if breakdownViewMode == .treemap {
+            treemapDensityControl
+              .transition(.opacity.combined(with: .move(edge: .trailing)))
+          }
         }
-      }
       .animation(.easeInOut(duration: 0.2), value: breakdownViewMode)
 
       ZStack {
@@ -835,23 +832,17 @@ struct ScanSessionView: View {
   }
 
   private var treemapDensityControl: some View {
-    HStack(spacing: 8) {
-      Text("Density")
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      LunarSegmentedControl(
-        options: [
-          LunarSegmentedControlOption("Simple", value: TreemapDensity.clean),
-          LunarSegmentedControlOption("Detailed", value: TreemapDensity.detailed)
-        ],
-        selection: $treemapDensity,
-        minItemWidth: 68,
-        horizontalPadding: 10,
-        verticalPadding: 6
-      )
-      .frame(width: 182)
-    }
+    LunarSegmentedControl(
+      options: [
+        LunarSegmentedControlOption("Simple", value: TreemapDensity.clean),
+        LunarSegmentedControlOption("Detailed", value: TreemapDensity.detailed)
+      ],
+      selection: $treemapDensity,
+      minItemWidth: 68,
+      horizontalPadding: 10,
+      verticalPadding: 6
+    )
+    .frame(width: 182)
     .padding(.vertical, 2)
   }
 
