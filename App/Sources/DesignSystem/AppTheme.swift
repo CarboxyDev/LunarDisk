@@ -165,3 +165,32 @@ struct LunarSecondaryButtonStyle: ButtonStyle {
       .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }
 }
+
+struct LunarDestructiveButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var isEnabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(
+      cornerRadius: AppTheme.Metrics.buttonCornerRadius,
+      style: .continuous
+    )
+
+    configuration.label
+      .font(AppTheme.Typography.button)
+      .foregroundStyle(AppTheme.Colors.destructiveForeground)
+      .frame(minWidth: AppTheme.Metrics.buttonMinWidth)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 10)
+      .background(
+        shape
+          .fill(configuration.isPressed ? AppTheme.Colors.destructive.opacity(0.84) : AppTheme.Colors.destructive)
+      )
+      .opacity(isEnabled ? 1 : 0.45)
+      .contentShape(shape)
+      .clipShape(shape)
+      .focusEffectDisabled()
+      .focusable(false)
+      .scaleEffect(configuration.isPressed ? 0.985 : 1)
+      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+  }
+}

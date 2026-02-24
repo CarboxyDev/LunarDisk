@@ -166,7 +166,7 @@ struct RootView: View {
       Button("Cancel Scan") {
         model.cancelScan()
       }
-      .buttonStyle(LunarSecondaryButtonStyle())
+      .buttonStyle(LunarDestructiveButtonStyle())
       .opacity(model.isScanning ? 1 : 0)
       .allowsHitTesting(model.isScanning)
       .disabled(!model.isScanning)
@@ -759,6 +759,7 @@ struct RootView: View {
               .font(AppTheme.Typography.body)
               .foregroundStyle(AppTheme.Colors.textSecondary)
           }
+          .help(entry.node.path)
           .padding(.vertical, 4)
           .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2))
           .listRowBackground(Color.clear)
@@ -1114,33 +1115,24 @@ private struct ScanningStatePanel: View {
   @State private var activeStepIndex = 0
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      HStack(alignment: .top, spacing: 14) {
-        AnimatedScanGlyph()
+    VStack(spacing: 18) {
+      AnimatedScanGlyph()
 
-        VStack(alignment: .leading, spacing: 6) {
-          Text(title)
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textPrimary)
+      VStack(spacing: 8) {
+        Text(title)
+          .font(.system(size: 24, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+          .multilineTextAlignment(.center)
 
-          Text(message)
-            .font(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-
-        Spacer(minLength: 0)
-
-        scanLiveBadge
+        Text(message)
+          .font(AppTheme.Typography.body)
+          .foregroundStyle(AppTheme.Colors.textTertiary)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
       }
+      .frame(maxWidth: 580)
 
-      Divider()
-        .overlay(AppTheme.Colors.divider)
-
-      ViewThatFits(in: .horizontal) {
-        stageRowLayout
-        stageColumnLayout
-      }
+      scanLiveBadge
 
       HStack(spacing: 8) {
         ProgressView()
@@ -1152,9 +1144,13 @@ private struct ScanningStatePanel: View {
           .foregroundStyle(AppTheme.Colors.textSecondary)
           .lineLimit(1)
       }
+      .padding(.top, 12)
+      .frame(maxWidth: .infinity, alignment: .center)
     }
-    .padding(20)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .padding(.horizontal, 24)
+    .padding(.vertical, 28)
+    .frame(maxWidth: 780)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     .background(
       RoundedRectangle(cornerRadius: AppTheme.Metrics.cardCornerRadius, style: .continuous)
         .fill(AppTheme.Colors.surface)
@@ -1195,57 +1191,6 @@ private struct ScanningStatePanel: View {
     )
   }
 
-  private var stageRowLayout: some View {
-    HStack(spacing: 10) {
-      ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-        stageCard(
-          text: step,
-          isActive: index == activeStepIndex
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-    }
-  }
-
-  private var stageColumnLayout: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-        stageCard(
-          text: step,
-          isActive: index == activeStepIndex
-        )
-      }
-    }
-  }
-
-  private func stageCard(text: String, isActive: Bool) -> some View {
-    HStack(alignment: .top, spacing: 8) {
-      Image(systemName: isActive ? "circle.fill" : "circle")
-        .font(.system(size: 9, weight: .semibold))
-        .foregroundStyle(isActive ? AppTheme.Colors.accent : AppTheme.Colors.textTertiary)
-        .padding(.top, 5)
-
-      Text(text)
-        .font(.system(size: 13, weight: isActive ? .semibold : .regular))
-        .foregroundStyle(isActive ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 9)
-    .background(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(isActive ? AppTheme.Colors.surfaceElevated.opacity(0.84) : AppTheme.Colors.surfaceElevated.opacity(0.46))
-        .overlay(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .stroke(
-              isActive ? AppTheme.Colors.cardBorder : AppTheme.Colors.cardBorder.opacity(0.7),
-              lineWidth: AppTheme.Metrics.cardBorderWidth
-            )
-        )
-    )
-    .animation(.easeInOut(duration: 0.2), value: isActive)
-  }
-
   private var activeStepText: String {
     guard !steps.isEmpty else {
       return "Scanning…"
@@ -1255,33 +1200,29 @@ private struct ScanningStatePanel: View {
 }
 
 private struct AnimatedScanGlyph: View {
-  @State private var isAnimating = false
-
   var body: some View {
-    ZStack {
-      Circle()
-        .fill(AppTheme.Colors.scanningGlyphBackground)
-        .frame(width: 70, height: 70)
-
-      Circle()
-        .trim(from: 0.16, to: 0.96)
-        .stroke(
-          AppTheme.Colors.scanningGlyphRing,
-          style: StrokeStyle(lineWidth: 2.1, lineCap: .round)
+    RoundedRectangle(cornerRadius: 22, style: .continuous)
+      .fill(
+        LinearGradient(
+          colors: [
+            AppTheme.Colors.scanningGlyphBackground,
+            AppTheme.Colors.surfaceElevated.opacity(0.92)
+          ],
+          startPoint: .topLeading,
+          endPoint: .bottomTrailing
         )
-        .frame(width: 70, height: 70)
-        .rotationEffect(.degrees(isAnimating ? 360 : 0))
-        .animation(.linear(duration: 1.9).repeatForever(autoreverses: false), value: isAnimating)
-
-      Image(systemName: "magnifyingglass")
-        .font(.system(size: 22, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-        .scaleEffect(isAnimating ? 1.08 : 0.92)
-        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isAnimating)
-    }
-    .onAppear {
-      isAnimating = true
-    }
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+          .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
+      )
+      .overlay {
+        Image(systemName: "internaldrive.fill")
+          .font(.system(size: 31, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+      }
+      .frame(width: 84, height: 84)
+      .shadow(color: AppTheme.Colors.shadow, radius: 10, x: 0, y: 6)
   }
 }
 

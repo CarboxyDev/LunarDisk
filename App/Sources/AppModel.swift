@@ -91,11 +91,17 @@ final class AppModel: ObservableObject {
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }
 
-      let generatedInsights = await analyzer.generateInsights(for: scannedRoot)
+      rootNode = scannedRoot
+      isScanning = false
+
+      let analyzer = self.analyzer
+      let generatedInsights = await Task.detached(priority: .utility) {
+        await analyzer.generateInsights(for: scannedRoot)
+      }.value
+
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }
 
-      rootNode = scannedRoot
       insights = generatedInsights
     } catch is CancellationError {
       return
