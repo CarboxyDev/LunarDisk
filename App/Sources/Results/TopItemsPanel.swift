@@ -225,7 +225,7 @@ struct TopItemsPanel: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .frame(maxWidth: .infinity, maxHeight: 300)
+        .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 300, alignment: .topLeading)
         .animation(nil, value: store.mode)
       }
     }
