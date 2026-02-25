@@ -44,13 +44,12 @@ public struct RadialBreakdownChartView: View {
   private let childrenByParentID: [String: [RadialBreakdownArc]]
   private let palette: [Color]
   private let maxDepth: Int
-  private let onPinnedPathChange: ((String?) -> Void)?
+  private let onPathActivated: ((String) -> Void)?
 
   @State private var hoveredArcID: String?
-  @State private var pinnedArcID: String?
 
   public init(root: FileNode) {
-    self.init(root: root, palette: Self.defaultPalette, onPinnedPathChange: nil)
+    self.init(root: root, palette: Self.defaultPalette, onPathActivated: nil)
   }
 
   public init(
@@ -60,7 +59,7 @@ public struct RadialBreakdownChartView: View {
     maxChildrenPerNode: Int = 12,
     minVisibleFraction: Double = 0.012,
     maxArcCount: Int = 2_000,
-    onPinnedPathChange: ((String?) -> Void)? = nil
+    onPathActivated: ((String) -> Void)? = nil
   ) {
     let arcs = RadialBreakdownLayout.makeArcs(
       from: root,
@@ -92,7 +91,7 @@ public struct RadialBreakdownChartView: View {
     self.childrenByParentID = groupedChildren
     self.palette = palette.isEmpty ? Self.defaultPalette : palette
     self.maxDepth = max(arcs.map(\.depth).max() ?? 1, 1)
-    self.onPinnedPathChange = onPinnedPathChange
+    self.onPathActivated = onPathActivated
   }
 
   public var body: some View {
@@ -161,17 +160,11 @@ public struct RadialBreakdownChartView: View {
           SpatialTapGesture()
             .onEnded { event in
               let hitArc = hitTest(at: event.location, metrics: metrics)
-              if pinnedArcID == hitArc?.id {
-                pinnedArcID = nil
-              } else {
-                pinnedArcID = hitArc?.id
+              if let path = hitArc?.path, !path.isEmpty {
+                onPathActivated?(path)
               }
             }
         )
-        .onChange(of: pinnedArcID) { _, pinnedArcID in
-          let path = pinnedArcID.flatMap { arcsByID[$0]?.path }
-          onPinnedPathChange?(path)
-        }
 
         totalBadge(using: metrics)
       }
@@ -179,7 +172,6 @@ public struct RadialBreakdownChartView: View {
       .contentShape(Rectangle())
       .clipped()
       .animation(.easeInOut(duration: 0.12), value: hoveredArcID)
-      .animation(.easeInOut(duration: 0.16), value: pinnedArcID)
     }
   }
 
@@ -188,9 +180,15 @@ public struct RadialBreakdownChartView: View {
     let rows = makeInspectorRows(for: inspectedArc)
 
     return VStack(alignment: .leading, spacing: 12) {
-      Text("Details")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(0.82))
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Details")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(Color.primary.opacity(0.82))
+
+        Text("Hover to inspect • Click folders to drill down")
+          .font(.system(size: 10.5, weight: .medium))
+          .foregroundStyle(Color.primary.opacity(0.62))
+      }
 
       selectionSummaryBlock(for: inspectedArc)
         .padding(12)
@@ -339,9 +337,6 @@ public struct RadialBreakdownChartView: View {
   }
 
   private var currentSelection: RadialBreakdownArc? {
-    if let pinnedArcID, let pinned = arcsByID[pinnedArcID] {
-      return pinned
-    }
     if let hoveredArcID, let hovered = arcsByID[hoveredArcID] {
       return hovered
     }

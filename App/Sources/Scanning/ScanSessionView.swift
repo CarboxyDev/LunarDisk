@@ -63,6 +63,11 @@ struct ScanSessionView: View {
     case failure(AppModel.ScanFailure)
   }
 
+  private enum RadialDrillTransitionDirection {
+    case deeper
+    case shallower
+  }
+
   private enum Layout {
     static let sectionSpacing: CGFloat = 16
     static let sideColumnWidth: CGFloat = 420
@@ -95,7 +100,7 @@ struct ScanSessionView: View {
   @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
   @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
   @State private var radialDrillPathStack: [String] = []
-  @State private var pinnedRadialPath: String?
+  @State private var radialDrillTransitionDirection: RadialDrillTransitionDirection = .deeper
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -130,6 +135,15 @@ struct ScanSessionView: View {
 
   private var canInteractWithSessionTabs: Bool {
     !isScanning && rootNode != nil
+  }
+
+  private var radialDrillFocusTransition: AnyTransition {
+    let insertionEdge: Edge = radialDrillTransitionDirection == .deeper ? .trailing : .leading
+    let removalEdge: Edge = radialDrillTransitionDirection == .deeper ? .leading : .trailing
+    return .asymmetric(
+      insertion: .opacity.combined(with: .move(edge: insertionEdge)),
+      removal: .opacity.combined(with: .move(edge: removalEdge))
+    )
   }
 
   var body: some View {
@@ -189,11 +203,6 @@ struct ScanSessionView: View {
       resetRadialDrill(for: rootNode)
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
-    }
-    .onChange(of: breakdownViewMode) { _, mode in
-      if mode != .radial {
-        pinnedRadialPath = nil
-      }
     }
   }
 
@@ -475,12 +484,7 @@ struct ScanSessionView: View {
         }
         resultsContent(rootNode: focusedNode, scanRootNode: rootNode)
           .id("overview-focus-\(focusedNode.path)")
-          .transition(
-            .asymmetric(
-              insertion: .opacity.combined(with: .move(edge: .trailing)),
-              removal: .opacity.combined(with: .move(edge: .leading))
-            )
-          )
+          .transition(radialDrillFocusTransition)
       }
 
     case .insights:
@@ -667,40 +671,40 @@ struct ScanSessionView: View {
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .top, spacing: 12) {
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Storage Breakdown")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-          Text("\(breakdownViewTitle) for \(displayName(for: rootNode))")
-            .font(.system(size: 12, weight: .regular))
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-        }
+        Text("Storage Breakdown")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
 
         Spacer()
 
-        VStack(alignment: .trailing, spacing: 8) {
-          breakdownModeSelector
-
-          Text(ByteFormatter.string(from: rootNode.sizeBytes))
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-        }
+        breakdownModeSelector
       }
 
-      Text(breakdownHelperText)
-        .font(.system(size: 11, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .trailing) {
-          if breakdownViewMode == .treemap {
-            treemapDensityControl
-              .transition(.opacity.combined(with: .move(edge: .trailing)))
-          }
+      if breakdownViewMode == .treemap {
+        HStack(spacing: 8) {
+          Label(ByteFormatter.string(from: rootNode.sizeBytes), systemImage: "externaldrive.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+              Capsule(style: .continuous)
+                .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
+                .overlay(
+                  Capsule(style: .continuous)
+                    .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
+                )
+            )
+
+          Spacer()
+
+          treemapDensityControl
         }
-      .animation(.easeInOut(duration: 0.2), value: breakdownViewMode)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+      }
 
       if breakdownViewMode == .radial {
-        radialDrillControls(currentNode: rootNode, scanRootNode: scanRootNode)
+        radialDrillControls(scanRootNode: scanRootNode)
           .transition(.opacity.combined(with: .move(edge: .top)))
       }
 
@@ -717,8 +721,8 @@ struct ScanSessionView: View {
           RadialBreakdownChartView(
             root: rootNode,
             palette: AppTheme.Colors.chartPalette,
-            onPinnedPathChange: { path in
-              pinnedRadialPath = path
+            onPathActivated: { path in
+              handleRadialPathActivation(path: path, scanRootNode: scanRootNode)
             }
           )
           .id("radial-\(rootNode.path)")
@@ -729,6 +733,7 @@ struct ScanSessionView: View {
       .frame(height: effectiveChartHeight)
       .animation(.easeInOut(duration: 0.22), value: breakdownViewMode)
       .animation(.easeInOut(duration: 0.16), value: treemapDensity)
+      .animation(.easeInOut(duration: 0.18), value: radialDrillPathStack)
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
           .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
@@ -780,26 +785,6 @@ struct ScanSessionView: View {
     .padding(.vertical, 2)
   }
 
-  private var breakdownHelperText: String {
-    switch breakdownViewMode {
-    case .treemap:
-      return treemapDensity == .clean
-        ? "Simple mode shows the biggest areas first."
-        : "Detailed mode shows more of the nested folder structure."
-    case .radial:
-      return "Radial mode shows hierarchy from the center outward. Hover or click slices to inspect nested folders."
-    }
-  }
-
-  private var breakdownViewTitle: String {
-    switch breakdownViewMode {
-    case .treemap:
-      return "Treemap"
-    case .radial:
-      return "Radial"
-    }
-  }
-
   private func supplementalResultsSections(
     rootNode: FileNode,
     useFixedWidth: Bool,
@@ -823,112 +808,76 @@ struct ScanSessionView: View {
     }
   }
 
-  private func radialDrillControls(currentNode: FileNode, scanRootNode: FileNode) -> some View {
+  private func radialDrillControls(scanRootNode: FileNode) -> some View {
     let breadcrumbs = radialBreadcrumbs(in: scanRootNode)
-    let canDrillBack = breadcrumbs.count > 1
-    let focusCandidate = focusablePinnedRadialNode(currentNode: currentNode, scanRootNode: scanRootNode)
 
-    return VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Label("Radial Drill-Down", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-
-        if let focusCandidate {
-          Text("Selection: \(displayName(for: focusCandidate))")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-            .lineLimit(1)
-        }
-
-        Spacer(minLength: 6)
-
-        Button {
-          focusPinnedRadialNode(in: scanRootNode)
-        } label: {
-          Label("Focus Selection", systemImage: "scope")
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-        .disabled(focusCandidate == nil)
-
-        Button {
-          drillBack()
-        } label: {
-          Label("Back", systemImage: "chevron.left")
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-        .disabled(!canDrillBack)
-
-        Button("Root") {
-          drillToRoot(scanRootNode)
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-        .disabled(currentNode.path == scanRootNode.path)
-      }
-
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 6) {
-          ForEach(Array(breadcrumbs.enumerated()), id: \.element.path) { index, node in
-            breadcrumbChip(
-              title: displayName(for: node),
-              isCurrent: index == breadcrumbs.count - 1,
-              action: {
-                jumpToRadialBreadcrumb(path: node.path)
-              }
-            )
-
-            if index < breadcrumbs.count - 1 {
-              Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(AppTheme.Colors.textTertiary)
+    return ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 6) {
+        ForEach(Array(breadcrumbs.enumerated()), id: \.element.path) { index, node in
+          breadcrumbChip(
+            title: displayName(for: node),
+            systemImage: index == 0 ? "scope" : nil,
+            isCurrent: index == breadcrumbs.count - 1,
+            action: {
+              jumpToRadialBreadcrumb(path: node.path)
             }
+          )
+
+          if index < breadcrumbs.count - 1 {
+            Image(systemName: "chevron.right")
+              .font(.system(size: 9, weight: .bold))
+              .foregroundStyle(AppTheme.Colors.textTertiary)
           }
         }
       }
+      .padding(.vertical, 2)
     }
-    .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
-        .overlay(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
-        )
-    )
+    .animation(.easeInOut(duration: 0.18), value: radialDrillPathStack)
   }
 
-  private func breadcrumbChip(title: String, isCurrent: Bool, action: @escaping () -> Void) -> some View {
+  private func breadcrumbChip(
+    title: String,
+    systemImage: String?,
+    isCurrent: Bool,
+    action: @escaping () -> Void
+  ) -> some View {
     Button(action: action) {
-      Text(title)
-        .font(.system(size: 11, weight: isCurrent ? .semibold : .medium))
-        .foregroundStyle(isCurrent ? AppTheme.Colors.accentForeground : AppTheme.Colors.textSecondary)
-        .lineLimit(1)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(
-          Capsule(style: .continuous)
-            .fill(isCurrent ? AppTheme.Colors.accent : AppTheme.Colors.surfaceElevated.opacity(0.62))
-            .overlay(
-              Capsule(style: .continuous)
-                .stroke(
-                  isCurrent ? AppTheme.Colors.accent.opacity(0.85) : AppTheme.Colors.cardBorder,
-                  lineWidth: 1
-                )
-            )
-        )
+      Group {
+        if let systemImage {
+          Label(title, systemImage: systemImage)
+        } else {
+          Text(title)
+        }
+      }
+      .font(.system(size: 11, weight: isCurrent ? .semibold : .medium))
+      .foregroundStyle(isCurrent ? AppTheme.Colors.accentForeground : AppTheme.Colors.textSecondary)
+      .lineLimit(1)
+      .padding(.horizontal, 9)
+      .padding(.vertical, 5)
+      .background(
+        Capsule(style: .continuous)
+          .fill(isCurrent ? AppTheme.Colors.accent : AppTheme.Colors.surfaceElevated.opacity(0.62))
+          .overlay(
+            Capsule(style: .continuous)
+              .stroke(
+                isCurrent ? AppTheme.Colors.accent.opacity(0.85) : AppTheme.Colors.cardBorder,
+                lineWidth: 1
+              )
+          )
+      )
     }
     .buttonStyle(.plain)
     .disabled(isCurrent)
   }
 
   private func resetRadialDrill(for rootNode: FileNode?) {
+    radialDrillTransitionDirection = .deeper
     if let rootNode {
       radialDrillPathStack = [rootNode.path]
     } else {
       radialDrillPathStack = []
     }
-    pinnedRadialPath = nil
   }
 
   private func focusedOverviewNode(in scanRootNode: FileNode) -> FileNode {
@@ -960,61 +909,47 @@ struct ScanSessionView: View {
     return resolved
   }
 
-  private func focusablePinnedRadialNode(currentNode: FileNode, scanRootNode: FileNode) -> FileNode? {
-    guard let pinnedRadialPath,
-          let pinnedNode = node(at: pinnedRadialPath, in: scanRootNode),
-          pinnedNode.isDirectory,
-          pinnedNode.path != currentNode.path
-    else {
-      return nil
-    }
-    return pinnedNode
-  }
-
-  private func focusPinnedRadialNode(in scanRootNode: FileNode) {
-    guard let focusNode = focusablePinnedRadialNode(
-      currentNode: focusedOverviewNode(in: scanRootNode),
-      scanRootNode: scanRootNode
-    )
+  private func handleRadialPathActivation(path: String, scanRootNode: FileNode) {
+    guard let chain = nodePathChain(to: path, in: scanRootNode),
+          let targetNode = chain.last,
+          targetNode.isDirectory
     else {
       return
     }
 
-    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
-      if let existingIndex = radialDrillPathStack.firstIndex(of: focusNode.path) {
-        radialDrillPathStack = Array(radialDrillPathStack.prefix(existingIndex + 1))
-      } else {
-        if radialDrillPathStack.isEmpty || radialDrillPathStack.first != scanRootNode.path {
-          radialDrillPathStack = [scanRootNode.path]
-        }
-        radialDrillPathStack.append(focusNode.path)
-      }
-    }
-    pinnedRadialPath = nil
-  }
+    let nextStack = chain.map(\.path)
+    let currentStack = radialDrillPathStack.isEmpty ? [scanRootNode.path] : radialDrillPathStack
+    guard nextStack != currentStack else { return }
 
-  private func drillBack() {
-    guard radialDrillPathStack.count > 1 else { return }
+    radialDrillTransitionDirection = nextStack.count >= currentStack.count ? .deeper : .shallower
     withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
-      radialDrillPathStack.removeLast()
+      radialDrillPathStack = nextStack
     }
-    pinnedRadialPath = nil
-  }
-
-  private func drillToRoot(_ scanRootNode: FileNode) {
-    guard radialDrillPathStack.last != scanRootNode.path else { return }
-    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
-      radialDrillPathStack = [scanRootNode.path]
-    }
-    pinnedRadialPath = nil
   }
 
   private func jumpToRadialBreadcrumb(path: String) {
     guard let index = radialDrillPathStack.firstIndex(of: path) else { return }
+    radialDrillTransitionDirection = .shallower
     withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
       radialDrillPathStack = Array(radialDrillPathStack.prefix(index + 1))
     }
-    pinnedRadialPath = nil
+  }
+
+  private func nodePathChain(to targetPath: String, in rootNode: FileNode) -> [FileNode]? {
+    var stack: [(node: FileNode, chain: [FileNode])] = [(rootNode, [rootNode])]
+
+    while let current = stack.popLast() {
+      if current.node.path == targetPath {
+        return current.chain
+      }
+
+      if current.node.isDirectory, !current.node.children.isEmpty {
+        for child in current.node.children.reversed() {
+          stack.append((child, current.chain + [child]))
+        }
+      }
+    }
+    return nil
   }
 
   private func node(at path: String, in rootNode: FileNode) -> FileNode? {
