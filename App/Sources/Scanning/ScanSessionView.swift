@@ -463,68 +463,15 @@ struct ScanSessionView: View {
       }
 
     case .insights:
-      insightsPanel
+      InsightsPanel(
+        rootNode: rootNode,
+        warningMessage: warningMessage,
+        onRevealInFinder: onRevealInFinder
+      )
 
     case .actions:
       actionsPanel(rootNode: rootNode)
     }
-  }
-
-  private var insightsPanel: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Insights")
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text("Auto-generated guidance from scan heuristics. Useful for quick prioritization before manual cleanup.")
-        .font(.system(size: 12, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      if insights.isEmpty {
-        HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
-
-          Text("Insights are still being generated.")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-        }
-      } else {
-        VStack(alignment: .leading, spacing: 10) {
-          ForEach(insights) { insight in
-            insightRow(insight)
-          }
-        }
-      }
-    }
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-    .lunarPanelBackground()
-  }
-
-  private func insightRow(_ insight: Insight) -> some View {
-    HStack(alignment: .top, spacing: 10) {
-      Image(systemName: insight.severity == .warning ? "exclamationmark.triangle.fill" : "lightbulb.fill")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(insight.severity == .warning ? AppTheme.Colors.statusWarningForeground : AppTheme.Colors.textSecondary)
-        .padding(.top, 2)
-
-      Text(insight.message)
-        .font(.system(size: 13, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
-        .overlay(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
   }
 
   private func actionsPanel(rootNode: FileNode) -> some View {
