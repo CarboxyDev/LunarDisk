@@ -100,9 +100,13 @@ struct ScanSetupView: View {
 
   private var setupHeader: some View {
     VStack(alignment: .leading, spacing: Layout.headerSpacing) {
-      Text("Start a New Scan")
-        .font(AppTheme.Typography.heroTitle)
-        .foregroundStyle(AppTheme.Colors.textPrimary)
+      HStack(alignment: .center, spacing: 10) {
+        LunarAppIcon(size: .section)
+
+        Text("Start a New Scan")
+          .font(AppTheme.Typography.heroTitle)
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+      }
 
       Text("Folder scan is fastest for iterative cleanup. Full-disk scan is available when you need complete system coverage.")
         .font(AppTheme.Typography.body)

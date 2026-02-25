@@ -91,14 +91,18 @@ struct OnboardingView: View {
   }
 
   private var header: some View {
-    VStack(alignment: .leading, spacing: AppTheme.Metrics.titleSpacing) {
-      Text("LunarDisk")
-        .font(AppTheme.Typography.heroTitle)
-        .foregroundStyle(AppTheme.Colors.textPrimary)
+    HStack(alignment: .center, spacing: 14) {
+      LunarAppIcon(size: .hero)
 
-      Text("Local disk usage analysis for macOS")
-        .font(AppTheme.Typography.heroSubtitle)
-        .foregroundStyle(AppTheme.Colors.textTertiary)
+      VStack(alignment: .leading, spacing: AppTheme.Metrics.titleSpacing) {
+        Text("LunarDisk")
+          .font(AppTheme.Typography.heroTitle)
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+
+        Text("Local disk usage analysis for macOS")
+          .font(AppTheme.Typography.heroSubtitle)
+          .foregroundStyle(AppTheme.Colors.textTertiary)
+      }
     }
   }
 
