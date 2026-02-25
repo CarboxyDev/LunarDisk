@@ -1,10 +1,18 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct LunardiskApp: App {
   @StateObject private var onboardingState: OnboardingStateStore
 
   init() {
+#if os(macOS)
+    if let appIcon = NSImage(named: NSImage.Name("AppIcon")) {
+      NSApplication.shared.applicationIconImage = appIcon
+    }
+#endif
     let resetScopes = PersistedStateScope.resolveFromProcessInfo()
     PersistedState.reset(scopes: resetScopes)
     _onboardingState = StateObject(wrappedValue: OnboardingStateStore())
