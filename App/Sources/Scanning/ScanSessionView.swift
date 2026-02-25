@@ -94,6 +94,8 @@ struct ScanSessionView: View {
   @State private var revealBody = false
   @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
   @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
+  @State private var radialDrillPathStack: [String] = []
+  @State private var pinnedRadialPath: String?
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -168,20 +170,30 @@ struct ScanSessionView: View {
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .animation(.spring(response: 0.38, dampingFraction: 0.9), value: phaseID)
     .animation(.easeInOut(duration: 0.2), value: selectedSection)
+    .animation(.spring(response: 0.34, dampingFraction: 0.9), value: radialDrillPathStack)
     .onAppear {
       animateEntranceIfNeeded()
     }
     .onChange(of: isScanning) { _, scanning in
       if scanning {
         selectedSection = .overview
+        resetRadialDrill(for: nil)
+      } else if let rootNode, radialDrillPathStack.isEmpty {
+        resetRadialDrill(for: rootNode)
       }
     }
     .onChange(of: rootNode?.id) { _, newRootID in
       if newRootID == nil {
         selectedSection = .overview
       }
+      resetRadialDrill(for: rootNode)
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
+    }
+    .onChange(of: breakdownViewMode) { _, mode in
+      if mode != .radial {
+        pinnedRadialPath = nil
+      }
     }
   }
 
@@ -456,11 +468,19 @@ struct ScanSessionView: View {
   private func resultsPhaseContent(rootNode: FileNode) -> some View {
     switch selectedSection {
     case .overview:
+      let focusedNode = focusedOverviewNode(in: rootNode)
       VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
         if let warningMessage {
           partialScanBanner(warningMessage)
         }
-        resultsContent(rootNode: rootNode)
+        resultsContent(rootNode: focusedNode, scanRootNode: rootNode)
+          .id("overview-focus-\(focusedNode.path)")
+          .transition(
+            .asymmetric(
+              insertion: .opacity.combined(with: .move(edge: .trailing)),
+              removal: .opacity.combined(with: .move(edge: .leading))
+            )
+          )
       }
 
     case .insights:
@@ -598,11 +618,12 @@ struct ScanSessionView: View {
     )
   }
 
-  private func resultsContent(rootNode: FileNode) -> some View {
+  private func resultsContent(rootNode: FileNode, scanRootNode: FileNode) -> some View {
     ViewThatFits(in: .horizontal) {
       HStack(alignment: .top, spacing: Layout.sectionSpacing) {
         distributionSection(
           rootNode: rootNode,
+          scanRootNode: scanRootNode,
           chartHeight: Layout.chartPreferredHeightTwoColumn,
           layoutVariant: .twoColumn
         )
@@ -616,6 +637,7 @@ struct ScanSessionView: View {
       VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
         distributionSection(
           rootNode: rootNode,
+          scanRootNode: scanRootNode,
           chartHeight: Layout.chartPreferredHeightSingleColumn,
           layoutVariant: .singleColumn
         )
@@ -636,6 +658,7 @@ struct ScanSessionView: View {
 
   private func distributionSection(
     rootNode: FileNode,
+    scanRootNode: FileNode,
     chartHeight: CGFloat,
     layoutVariant: ResultsLayoutVariant
   ) -> some View {
@@ -676,6 +699,11 @@ struct ScanSessionView: View {
         }
       .animation(.easeInOut(duration: 0.2), value: breakdownViewMode)
 
+      if breakdownViewMode == .radial {
+        radialDrillControls(currentNode: rootNode, scanRootNode: scanRootNode)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+
       ZStack {
         if breakdownViewMode == .treemap {
           TreemapChartView(
@@ -688,9 +716,12 @@ struct ScanSessionView: View {
         } else {
           RadialBreakdownChartView(
             root: rootNode,
-            palette: AppTheme.Colors.chartPalette
+            palette: AppTheme.Colors.chartPalette,
+            onPinnedPathChange: { path in
+              pinnedRadialPath = path
+            }
           )
-          .id("radial")
+          .id("radial-\(rootNode.path)")
           .transition(.opacity.combined(with: .scale(scale: 0.985)))
         }
       }
@@ -790,6 +821,217 @@ struct ScanSessionView: View {
           .frame(maxWidth: .infinity, alignment: .topLeading)
       }
     }
+  }
+
+  private func radialDrillControls(currentNode: FileNode, scanRootNode: FileNode) -> some View {
+    let breadcrumbs = radialBreadcrumbs(in: scanRootNode)
+    let canDrillBack = breadcrumbs.count > 1
+    let focusCandidate = focusablePinnedRadialNode(currentNode: currentNode, scanRootNode: scanRootNode)
+
+    return VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Label("Radial Drill-Down", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        if let focusCandidate {
+          Text("Selection: \(displayName(for: focusCandidate))")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(AppTheme.Colors.textTertiary)
+            .lineLimit(1)
+        }
+
+        Spacer(minLength: 6)
+
+        Button {
+          focusPinnedRadialNode(in: scanRootNode)
+        } label: {
+          Label("Focus Selection", systemImage: "scope")
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+        .disabled(focusCandidate == nil)
+
+        Button {
+          drillBack()
+        } label: {
+          Label("Back", systemImage: "chevron.left")
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+        .disabled(!canDrillBack)
+
+        Button("Root") {
+          drillToRoot(scanRootNode)
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+        .disabled(currentNode.path == scanRootNode.path)
+      }
+
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 6) {
+          ForEach(Array(breadcrumbs.enumerated()), id: \.element.path) { index, node in
+            breadcrumbChip(
+              title: displayName(for: node),
+              isCurrent: index == breadcrumbs.count - 1,
+              action: {
+                jumpToRadialBreadcrumb(path: node.path)
+              }
+            )
+
+            if index < breadcrumbs.count - 1 {
+              Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(AppTheme.Colors.textTertiary)
+            }
+          }
+        }
+      }
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
+        .overlay(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
+        )
+    )
+  }
+
+  private func breadcrumbChip(title: String, isCurrent: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(title)
+        .font(.system(size: 11, weight: isCurrent ? .semibold : .medium))
+        .foregroundStyle(isCurrent ? AppTheme.Colors.accentForeground : AppTheme.Colors.textSecondary)
+        .lineLimit(1)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+          Capsule(style: .continuous)
+            .fill(isCurrent ? AppTheme.Colors.accent : AppTheme.Colors.surfaceElevated.opacity(0.62))
+            .overlay(
+              Capsule(style: .continuous)
+                .stroke(
+                  isCurrent ? AppTheme.Colors.accent.opacity(0.85) : AppTheme.Colors.cardBorder,
+                  lineWidth: 1
+                )
+            )
+        )
+    }
+    .buttonStyle(.plain)
+    .disabled(isCurrent)
+  }
+
+  private func resetRadialDrill(for rootNode: FileNode?) {
+    if let rootNode {
+      radialDrillPathStack = [rootNode.path]
+    } else {
+      radialDrillPathStack = []
+    }
+    pinnedRadialPath = nil
+  }
+
+  private func focusedOverviewNode(in scanRootNode: FileNode) -> FileNode {
+    if let candidatePath = radialDrillPathStack.last,
+       let candidateNode = node(at: candidatePath, in: scanRootNode)
+    {
+      return candidateNode
+    }
+    return scanRootNode
+  }
+
+  private func radialBreadcrumbs(in scanRootNode: FileNode) -> [FileNode] {
+    guard !radialDrillPathStack.isEmpty else {
+      return [scanRootNode]
+    }
+
+    let resolved = radialDrillPathStack.compactMap { path in
+      node(at: path, in: scanRootNode)
+    }
+
+    if resolved.isEmpty {
+      return [scanRootNode]
+    }
+
+    if resolved.first?.path != scanRootNode.path {
+      return [scanRootNode] + resolved
+    }
+
+    return resolved
+  }
+
+  private func focusablePinnedRadialNode(currentNode: FileNode, scanRootNode: FileNode) -> FileNode? {
+    guard let pinnedRadialPath,
+          let pinnedNode = node(at: pinnedRadialPath, in: scanRootNode),
+          pinnedNode.isDirectory,
+          pinnedNode.path != currentNode.path
+    else {
+      return nil
+    }
+    return pinnedNode
+  }
+
+  private func focusPinnedRadialNode(in scanRootNode: FileNode) {
+    guard let focusNode = focusablePinnedRadialNode(
+      currentNode: focusedOverviewNode(in: scanRootNode),
+      scanRootNode: scanRootNode
+    )
+    else {
+      return
+    }
+
+    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
+      if let existingIndex = radialDrillPathStack.firstIndex(of: focusNode.path) {
+        radialDrillPathStack = Array(radialDrillPathStack.prefix(existingIndex + 1))
+      } else {
+        if radialDrillPathStack.isEmpty || radialDrillPathStack.first != scanRootNode.path {
+          radialDrillPathStack = [scanRootNode.path]
+        }
+        radialDrillPathStack.append(focusNode.path)
+      }
+    }
+    pinnedRadialPath = nil
+  }
+
+  private func drillBack() {
+    guard radialDrillPathStack.count > 1 else { return }
+    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
+      radialDrillPathStack.removeLast()
+    }
+    pinnedRadialPath = nil
+  }
+
+  private func drillToRoot(_ scanRootNode: FileNode) {
+    guard radialDrillPathStack.last != scanRootNode.path else { return }
+    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
+      radialDrillPathStack = [scanRootNode.path]
+    }
+    pinnedRadialPath = nil
+  }
+
+  private func jumpToRadialBreadcrumb(path: String) {
+    guard let index = radialDrillPathStack.firstIndex(of: path) else { return }
+    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
+      radialDrillPathStack = Array(radialDrillPathStack.prefix(index + 1))
+    }
+    pinnedRadialPath = nil
+  }
+
+  private func node(at path: String, in rootNode: FileNode) -> FileNode? {
+    if rootNode.path == path {
+      return rootNode
+    }
+
+    var stack: [FileNode] = rootNode.children
+    while let current = stack.popLast() {
+      if current.path == path {
+        return current
+      }
+      if current.isDirectory, !current.children.isEmpty {
+        stack.append(contentsOf: current.children)
+      }
+    }
+    return nil
   }
 
   private func displayName(for node: FileNode) -> String {
