@@ -411,6 +411,86 @@ final class LunardiskTests: XCTestCase {
     XCTAssertEqual(store.visibleEntries(limit: 1).first?.node.path, "/root/b/b1")
   }
 
+  func testScanActionsSnapshotPrioritizesSafeAndFlagsCautionPaths() {
+    let caches = FileNode(
+      name: "Caches",
+      path: "/Users/test/Library/Caches",
+      isDirectory: true,
+      sizeBytes: 700 * 1_024 * 1_024
+    )
+    let system = FileNode(
+      name: "System",
+      path: "/System/Library/CoreServices",
+      isDirectory: true,
+      sizeBytes: 850 * 1_024 * 1_024
+    )
+    let downloads = FileNode(
+      name: "Downloads",
+      path: "/Users/test/Downloads",
+      isDirectory: true,
+      sizeBytes: 500 * 1_024 * 1_024
+    )
+    let root = FileNode(
+      name: "root",
+      path: "/",
+      isDirectory: true,
+      sizeBytes: caches.sizeBytes + system.sizeBytes + downloads.sizeBytes,
+      children: [caches, system, downloads]
+    )
+
+    let snapshot = ScanActionsSnapshot(rootNode: root)
+    let candidateByPath = Dictionary(uniqueKeysWithValues: snapshot.candidates.map { ($0.node.path, $0) })
+
+    XCTAssertEqual(candidateByPath["/Users/test/Library/Caches"]?.risk, .safe)
+    XCTAssertEqual(candidateByPath["/System/Library/CoreServices"]?.risk, .caution)
+    XCTAssertEqual(candidateByPath["/Users/test/Downloads"]?.risk, .review)
+    XCTAssertTrue(snapshot.quickWins.contains(where: { $0.node.path == "/Users/test/Library/Caches" }))
+    XCTAssertFalse(snapshot.quickWins.contains(where: { $0.node.path == "/System/Library/CoreServices" }))
+  }
+
+  func testScanActionsSnapshotAvoidsNestedDoubleCountingInSelectionEstimate() {
+    let cacheLeaf = FileNode(
+      name: "cache.bin",
+      path: "/Users/test/Library/Caches/app/cache.bin",
+      isDirectory: false,
+      sizeBytes: 700 * 1_024 * 1_024
+    )
+    let cacheParent = FileNode(
+      name: "Caches",
+      path: "/Users/test/Library/Caches",
+      isDirectory: true,
+      sizeBytes: 900 * 1_024 * 1_024,
+      children: [cacheLeaf]
+    )
+    let videos = FileNode(
+      name: "Videos",
+      path: "/Users/test/Videos",
+      isDirectory: true,
+      sizeBytes: 300 * 1_024 * 1_024
+    )
+    let root = FileNode(
+      name: "root",
+      path: "/Users/test",
+      isDirectory: true,
+      sizeBytes: cacheParent.sizeBytes + videos.sizeBytes,
+      children: [cacheParent, videos]
+    )
+
+    let snapshot = ScanActionsSnapshot(rootNode: root)
+    XCTAssertTrue(snapshot.candidates.contains(where: { $0.node.path == cacheParent.path }))
+    XCTAssertTrue(snapshot.candidates.contains(where: { $0.node.path == cacheLeaf.path }))
+
+    let selectedIDs = Set([cacheParent.path, cacheLeaf.path])
+    let estimated = snapshot.estimatedBytes(for: selectedIDs)
+
+    XCTAssertEqual(estimated, cacheParent.sizeBytes)
+
+    let naiveSum = snapshot.candidates.reduce(Int64(0)) { partial, candidate in
+      partial + candidate.estimatedReclaimBytes
+    }
+    XCTAssertLessThanOrEqual(snapshot.totalEstimatedReclaimBytes, naiveSum)
+  }
+
   private func waitForPendingScans(_ scanner: ControlledScanner, expected: Int) async {
     for _ in 0..<60 {
       if await scanner.pendingCount() >= expected {

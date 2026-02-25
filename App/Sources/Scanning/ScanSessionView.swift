@@ -92,6 +92,7 @@ struct ScanSessionView: View {
   @State private var revealHeader = false
   @State private var revealBody = false
   @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
+  @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -179,6 +180,7 @@ struct ScanSessionView: View {
         selectedSection = .overview
       }
       cachedInsightsSnapshot = nil
+      cachedActionsSnapshot = nil
     }
   }
 
@@ -478,70 +480,19 @@ struct ScanSessionView: View {
       )
 
     case .actions:
-      actionsPanel(rootNode: rootNode)
-    }
-  }
-
-  private func actionsPanel(rootNode: FileNode) -> some View {
-    let candidates = Array(rootNode.sortedChildrenBySize.prefix(5))
-
-    return VStack(alignment: .leading, spacing: 12) {
-      Text("Actions")
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text("Focused next moves based on biggest direct consumers. This section is intentionally lightweight and will evolve into guided cleanup workflows.")
-        .font(.system(size: 12, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      if candidates.isEmpty {
-        Text("No actionable items found for this target.")
-          .font(.system(size: 13, weight: .regular))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-      } else {
-        VStack(alignment: .leading, spacing: 10) {
-          ForEach(candidates, id: \.id) { node in
-            actionRow(for: node)
-          }
+      let cacheKey = actionsCacheKey(for: rootNode)
+      ActionsPanel(
+        rootNode: rootNode,
+        warningMessage: warningMessage,
+        onRevealInFinder: onRevealInFinder,
+        onRescan: onRetryScan,
+        cacheKey: cacheKey,
+        cachedSnapshot: cachedActionsSnapshot?.key == cacheKey ? cachedActionsSnapshot?.snapshot : nil,
+        onSnapshotReady: { snapshot in
+          cachedActionsSnapshot = (key: cacheKey, snapshot: snapshot)
         }
-      }
+      )
     }
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-    .lunarPanelBackground()
-  }
-
-  private func actionRow(for node: FileNode) -> some View {
-    HStack(spacing: 10) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(node.name.isEmpty ? node.path : node.name)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textPrimary)
-          .lineLimit(1)
-
-        Text(ByteFormatter.string(from: node.sizeBytes))
-          .font(.system(size: 12, weight: .regular))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-      }
-
-      Spacer(minLength: 0)
-
-      Button("Reveal in Finder") {
-        onRevealInFinder(node.path)
-      }
-      .buttonStyle(LunarSecondaryButtonStyle())
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
-        .overlay(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
   }
 
   private func failurePanel(_ failure: AppModel.ScanFailure) -> some View {
@@ -855,6 +806,10 @@ struct ScanSessionView: View {
   }
 
   private func insightsCacheKey(for node: FileNode) -> String {
+    "\(node.id)|\(node.sizeBytes)|\(node.children.count)"
+  }
+
+  private func actionsCacheKey(for node: FileNode) -> String {
     "\(node.id)|\(node.sizeBytes)|\(node.children.count)"
   }
 
