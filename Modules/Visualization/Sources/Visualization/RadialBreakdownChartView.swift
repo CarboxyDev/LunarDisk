@@ -28,7 +28,10 @@ public struct RadialBreakdownChartView: View {
   private struct InteractionFidelityConfig {
     let hoverSamplingInterval: CFTimeInterval
     let hoverSnapshotDelayNanoseconds: UInt64
+    let hoverClearDelayNanoseconds: UInt64
     let showsHoverOutline: Bool
+    let allowsHoverAnimation: Bool
+    let allowsMajorArcLift: Bool
   }
 
   private static let defaultPalette: [Color] = [
@@ -40,6 +43,9 @@ public struct RadialBreakdownChartView: View {
   ]
 
   private static let inspectorRowCapacity = 6
+  private static let majorLiftShareThreshold: Double = 0.02
+  private static let majorLiftAngularSpanThreshold: Double = .pi / 14
+  private static let majorLiftMaxDepth = 2
   private let rootSizeBytes: Int64
   private let rootArcID: String
   private let nonRootArcs: [RadialBreakdownArc]
@@ -54,12 +60,18 @@ public struct RadialBreakdownChartView: View {
   private let onPathActivated: ((String) -> Void)?
   private let pinnedArcID: String?
   private let interactionFidelity: InteractionFidelityConfig
+  private let majorArcIDsForHoverLift: Set<String>
   private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
   private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
 
   @State private var hoveredArcID: String?
+  @State private var renderedHoverArcID: String?
+  @State private var hoverPresentationProgress: CGFloat = 0
   @State private var lastHoverUpdateTimestamp: CFTimeInterval = 0
   @State private var hoverSnapshotTask: Task<Void, Never>?
+  @State private var hoverClearTask: Task<Void, Never>?
+  @State private var hoverPresentationResetTask: Task<Void, Never>?
+  @State private var hoverPresentationAnimationTask: Task<Void, Never>?
 
   public init(root: FileNode) {
     self.init(root: root, palette: Self.defaultPalette, onPathActivated: nil)
@@ -112,6 +124,23 @@ public struct RadialBreakdownChartView: View {
 
     let nonRootArcs = arcs.filter { $0.depth > 0 }
     let interactionFidelity = Self.interactionFidelityConfig(forArcCount: nonRootArcs.count)
+    var majorArcIDsForHoverLift: Set<String> = []
+    if interactionFidelity.allowsMajorArcLift {
+      let safeRootSize = Double(max(root.sizeBytes, 1))
+      majorArcIDsForHoverLift = Set(
+        nonRootArcs.compactMap { arc in
+          guard !arc.isAggregate else { return nil }
+          guard arc.depth <= Self.majorLiftMaxDepth else { return nil }
+          let shareOfRoot = Double(max(arc.sizeBytes, 0)) / safeRootSize
+          let angularSpan = arc.endAngle - arc.startAngle
+          if shareOfRoot >= Self.majorLiftShareThreshold || angularSpan >= Self.majorLiftAngularSpanThreshold {
+            return arc.id
+          }
+          return nil
+        }
+      )
+    }
+
     var groupedByDepth: [Int: [RadialBreakdownArc]] = [:]
     for arc in nonRootArcs {
       groupedByDepth[arc.depth, default: []].append(arc)
@@ -196,6 +225,7 @@ public struct RadialBreakdownChartView: View {
     self.onPathActivated = onPathActivated
     self.pinnedArcID = pinnedArcID
     self.interactionFidelity = interactionFidelity
+    self.majorArcIDsForHoverLift = majorArcIDsForHoverLift
     self.onHoverSnapshotChanged = onHoverSnapshotChanged
     self.onRootSnapshotReady = onRootSnapshotReady
   }
@@ -209,8 +239,40 @@ public struct RadialBreakdownChartView: View {
         onRootSnapshotReady?(makeInspectorSnapshot(forArcID: rootArcID))
         onHoverSnapshotChanged?(nil)
       }
-      .onChange(of: hoveredArcID) { _, newHoveredArcID in
+      .onChange(of: hoveredArcID) { oldHoveredArcID, newHoveredArcID in
         hoverSnapshotTask?.cancel()
+        hoverClearTask?.cancel()
+        hoverPresentationResetTask?.cancel()
+        hoverPresentationAnimationTask?.cancel()
+
+        if interactionFidelity.allowsHoverAnimation {
+          switch (oldHoveredArcID, newHoveredArcID) {
+          case (nil, let next?) where !next.isEmpty:
+            renderedHoverArcID = next
+            setHoverPresentationProgress(0.08)
+            animateHoverPresentation(to: 1, duration: 0.22)
+          case (let previous?, nil):
+            renderedHoverArcID = previous
+            animateHoverPresentation(to: 0, duration: 0.18)
+            hoverPresentationResetTask = Task { @MainActor in
+              try? await Task.sleep(nanoseconds: 200_000_000)
+              guard !Task.isCancelled else { return }
+              guard hoveredArcID == nil else { return }
+              renderedHoverArcID = nil
+            }
+          case (_, let next?) where !next.isEmpty:
+            renderedHoverArcID = next
+            setHoverPresentationProgress(max(hoverPresentationProgress, 0.78))
+            animateHoverPresentation(to: 1, duration: 0.12)
+          default:
+            renderedHoverArcID = nil
+            setHoverPresentationProgress(0)
+          }
+        } else {
+          renderedHoverArcID = newHoveredArcID
+          setHoverPresentationProgress(newHoveredArcID == nil ? 0 : 1)
+        }
+
         guard let newHoveredArcID else {
           onHoverSnapshotChanged?(nil)
           return
@@ -224,7 +286,15 @@ public struct RadialBreakdownChartView: View {
       }
       .onDisappear {
         hoverSnapshotTask?.cancel()
+        hoverClearTask?.cancel()
+        hoverPresentationResetTask?.cancel()
+        hoverPresentationAnimationTask?.cancel()
         hoverSnapshotTask = nil
+        hoverClearTask = nil
+        hoverPresentationResetTask = nil
+        hoverPresentationAnimationTask = nil
+        renderedHoverArcID = nil
+        setHoverPresentationProgress(0)
       }
   }
 
@@ -241,7 +311,8 @@ public struct RadialBreakdownChartView: View {
               arc,
               using: metrics,
               activeArcID: activePinnedArcID,
-              hoveredArcID: hoveredArcID,
+              hoveredArcID: renderedHoverArcID,
+              hoverPresentationProgress: hoverPresentationProgress,
               relatedArcIDs: relatedArcIDs,
               context: &context
             )
@@ -252,16 +323,31 @@ public struct RadialBreakdownChartView: View {
           switch phase {
           case let .active(location):
             let hitArcID = hitTest(at: location, metrics: metrics)?.id
-            guard hitArcID != hoveredArcID else { return }
+            if let hitArcID {
+              hoverClearTask?.cancel()
+              hoverClearTask = nil
+              guard hitArcID != hoveredArcID else { return }
 
-            let now = CACurrentMediaTime()
-            if hitArcID != nil, now - lastHoverUpdateTimestamp < interactionFidelity.hoverSamplingInterval {
-              return
+              let now = CACurrentMediaTime()
+              if now - lastHoverUpdateTimestamp < interactionFidelity.hoverSamplingInterval {
+                return
+              }
+
+              hoveredArcID = hitArcID
+              lastHoverUpdateTimestamp = now
+            } else if hoveredArcID != nil, hoverClearTask == nil {
+              hoverClearTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: interactionFidelity.hoverClearDelayNanoseconds)
+                guard !Task.isCancelled else { return }
+                guard hoveredArcID != nil else { return }
+                hoveredArcID = nil
+                lastHoverUpdateTimestamp = CACurrentMediaTime()
+                hoverClearTask = nil
+              }
             }
-
-            hoveredArcID = hitArcID
-            lastHoverUpdateTimestamp = now
           case .ended:
+            hoverClearTask?.cancel()
+            hoverClearTask = nil
             if hoveredArcID != nil {
               hoveredArcID = nil
               lastHoverUpdateTimestamp = CACurrentMediaTime()
@@ -345,10 +431,34 @@ public struct RadialBreakdownChartView: View {
     using metrics: ChartMetrics,
     activeArcID: String?,
     hoveredArcID: String?,
+    hoverPresentationProgress: CGFloat,
     relatedArcIDs: Set<String>?,
     context: inout GraphicsContext
   ) {
-    let ringBounds = metrics.ringBounds(for: arc.depth)
+    let isSelected = activeArcID == arc.id
+    let isHovered = hoveredArcID == arc.id
+    let hoverProgress = min(max(hoverPresentationProgress, 0), 1)
+    let usesStrongHoverPresentation = interactionFidelity.showsHoverOutline && isHovered && !isSelected
+    let shouldLiftHoveredArc = usesStrongHoverPresentation && majorArcIDsForHoverLift.contains(arc.id)
+
+    var ringBounds = metrics.ringBounds(for: arc.depth)
+    if usesStrongHoverPresentation {
+      var inner = ringBounds.inner - (1.8 * hoverProgress)
+      var outer = ringBounds.outer + (3.8 * hoverProgress)
+
+      if shouldLiftHoveredArc {
+        let desiredLift = 2.8 * hoverProgress
+        let maxLift = max(0, (metrics.chartRadius - 0.6) - outer)
+        let appliedLift = min(desiredLift, maxLift)
+        inner += appliedLift
+        outer += appliedLift
+      }
+
+      ringBounds.inner = max(metrics.donutRadius + 0.6, inner)
+      ringBounds.outer = min(metrics.chartRadius - 0.6, outer)
+      ringBounds.outer = max(ringBounds.outer, ringBounds.inner + 0.8)
+    }
+
     let span = arc.endAngle - arc.startAngle
     guard span > 0.0001 else { return }
 
@@ -375,26 +485,73 @@ public struct RadialBreakdownChartView: View {
     )
     path.closeSubpath()
 
-    let isSelected = activeArcID == arc.id
-    let isHovered = interactionFidelity.showsHoverOutline && !isSelected && hoveredArcID == arc.id
-    context.fill(path, with: .color(color(for: arc, activeArcID: activeArcID, relatedArcIDs: relatedArcIDs)))
+    context.fill(
+      path,
+      with: .color(
+        color(
+          for: arc,
+          activeArcID: activeArcID,
+          relatedArcIDs: relatedArcIDs,
+          hoveredArcID: hoveredArcID,
+          hoverPresentationProgress: hoverProgress
+        )
+      )
+    )
+
+    if usesStrongHoverPresentation {
+      let liftBoost: CGFloat = shouldLiftHoveredArc ? 1.2 : 1
+      context.drawLayer { layer in
+        layer.addFilter(
+          .shadow(
+            color: Color.white.opacity((0.4 * hoverProgress) * liftBoost),
+            radius: (7 * hoverProgress) * liftBoost,
+            x: 0,
+            y: 0
+          )
+        )
+        layer.stroke(path, with: .color(Color.white.opacity(0.94 * hoverProgress)), lineWidth: 2.1 * hoverProgress)
+      }
+    }
+
+    let baseHoverStrokeOpacity = Color.white.opacity(0.72)
+    let animatedHoverStrokeOpacity = Color.white.opacity(0.72 + (0.24 * hoverProgress))
+
     context.stroke(
       path,
-      with: .color(isSelected ? Color.white.opacity(0.93) : (isHovered ? Color.white.opacity(0.72) : Color.white.opacity(0.2))),
-      lineWidth: isSelected ? 1.35 : (isHovered ? 1.05 : 0.65)
+      with: .color(
+        isSelected
+          ? Color.white.opacity(0.93)
+          : (usesStrongHoverPresentation ? animatedHoverStrokeOpacity : (isHovered ? baseHoverStrokeOpacity : Color.white.opacity(0.2)))
+      ),
+      lineWidth: isSelected ? 1.35 : (usesStrongHoverPresentation ? (1.05 + (0.75 * hoverProgress)) : (isHovered ? 1.05 : 0.65))
     )
   }
 
-  private func color(for arc: RadialBreakdownArc, activeArcID: String?, relatedArcIDs: Set<String>?) -> Color {
+  private func color(
+    for arc: RadialBreakdownArc,
+    activeArcID: String?,
+    relatedArcIDs: Set<String>?,
+    hoveredArcID: String?,
+    hoverPresentationProgress: CGFloat
+  ) -> Color {
     let base = baseColorByArcID[arc.id] ?? Self.makeBaseColor(for: arc, palette: palette)
     let depthOpacity = max(0.62, 0.94 - (Double(max(arc.depth - 1, 0)) * 0.08))
     let opacity: Double
+    let clampedHoverProgress = Double(min(max(hoverPresentationProgress, 0), 1))
 
     if let activeArcID {
       if relatedArcIDs?.contains(arc.id) == true {
         opacity = arc.id == activeArcID ? min(depthOpacity + 0.08, 1) : depthOpacity
       } else {
         opacity = depthOpacity * 0.26
+      }
+    } else if let hoveredArcID {
+      if arc.id == hoveredArcID {
+        let targetOpacity = min(depthOpacity + 0.18, 1)
+        opacity = depthOpacity + ((targetOpacity - depthOpacity) * clampedHoverProgress)
+      } else {
+        let targetOpacity = max(depthOpacity * 0.46, 0.2)
+        opacity = depthOpacity + ((targetOpacity - depthOpacity) * clampedHoverProgress)
       }
     } else {
       opacity = depthOpacity
@@ -464,15 +621,66 @@ public struct RadialBreakdownChartView: View {
       return InteractionFidelityConfig(
         hoverSamplingInterval: 1.0 / 24.0,
         hoverSnapshotDelayNanoseconds: 55_000_000,
-        showsHoverOutline: false
+        hoverClearDelayNanoseconds: 72_000_000,
+        showsHoverOutline: false,
+        allowsHoverAnimation: false,
+        allowsMajorArcLift: false
+      )
+    }
+
+    if arcCount >= 420 {
+      return InteractionFidelityConfig(
+        hoverSamplingInterval: 1.0 / 32.0,
+        hoverSnapshotDelayNanoseconds: 32_000_000,
+        hoverClearDelayNanoseconds: 66_000_000,
+        showsHoverOutline: true,
+        allowsHoverAnimation: false,
+        allowsMajorArcLift: false
       )
     }
 
     return InteractionFidelityConfig(
       hoverSamplingInterval: 1.0 / 45.0,
       hoverSnapshotDelayNanoseconds: 18_000_000,
-      showsHoverOutline: true
+      hoverClearDelayNanoseconds: 58_000_000,
+      showsHoverOutline: true,
+      allowsHoverAnimation: true,
+      allowsMajorArcLift: true
     )
+  }
+
+  private func setHoverPresentationProgress(_ value: CGFloat) {
+    hoverPresentationProgress = min(max(value, 0), 1)
+  }
+
+  private func animateHoverPresentation(to target: CGFloat, duration: CFTimeInterval) {
+    hoverPresentationAnimationTask?.cancel()
+    let clampedTarget = min(max(target, 0), 1)
+    let start = hoverPresentationProgress
+
+    guard duration > 0.001 else {
+      setHoverPresentationProgress(clampedTarget)
+      return
+    }
+
+    hoverPresentationAnimationTask = Task { @MainActor in
+      let startedAt = CACurrentMediaTime()
+      while !Task.isCancelled {
+        let elapsed = CACurrentMediaTime() - startedAt
+        let rawProgress = min(max(elapsed / duration, 0), 1)
+        let easedProgress = rawProgress * (2 - rawProgress)
+        let current = start + ((clampedTarget - start) * CGFloat(easedProgress))
+        setHoverPresentationProgress(current)
+        if rawProgress >= 1 {
+          break
+        }
+        try? await Task.sleep(nanoseconds: 16_000_000)
+      }
+
+      guard !Task.isCancelled else { return }
+      setHoverPresentationProgress(clampedTarget)
+      hoverPresentationAnimationTask = nil
+    }
   }
 
   private func relatedArcIDs(for activeArcID: String?) -> Set<String>? {
