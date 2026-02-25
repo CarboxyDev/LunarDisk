@@ -5,6 +5,9 @@ struct InsightsPanel: View {
   let rootNode: FileNode
   let warningMessage: String?
   let onRevealInFinder: (String) -> Void
+  let cacheKey: String
+  let cachedSnapshot: ScanInsightsSnapshot?
+  let onSnapshotReady: (ScanInsightsSnapshot) -> Void
 
   @State private var snapshot: ScanInsightsSnapshot?
   @State private var isComputingSnapshot = false
@@ -37,10 +40,10 @@ struct InsightsPanel: View {
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .onAppear {
-      refreshSnapshotIfNeeded(force: false)
+      hydrateOrRefreshSnapshot(force: false)
     }
-    .onChange(of: snapshotKey) { _, _ in
-      refreshSnapshotIfNeeded(force: true)
+    .onChange(of: cacheKey) { _, _ in
+      hydrateOrRefreshSnapshot(force: true)
     }
     .onDisappear {
       snapshotTask?.cancel()
@@ -48,8 +51,13 @@ struct InsightsPanel: View {
     }
   }
 
-  private var snapshotKey: String {
-    "\(rootNode.id)|\(rootNode.sizeBytes)|\(rootNode.children.count)"
+  private func hydrateOrRefreshSnapshot(force: Bool) {
+    if let cachedSnapshot {
+      snapshot = cachedSnapshot
+      isComputingSnapshot = false
+      return
+    }
+    refreshSnapshotIfNeeded(force: force)
   }
 
   private func refreshSnapshotIfNeeded(force: Bool) {
@@ -58,7 +66,7 @@ struct InsightsPanel: View {
     }
 
     let rootSnapshot = rootNode
-    let expectedKey = snapshotKey
+    let expectedKey = cacheKey
 
     snapshotTask?.cancel()
     isComputingSnapshot = true
@@ -68,9 +76,10 @@ struct InsightsPanel: View {
       guard !Task.isCancelled else { return }
 
       await MainActor.run {
-        guard expectedKey == snapshotKey else { return }
+        guard expectedKey == cacheKey else { return }
         snapshot = computed
         isComputingSnapshot = false
+        onSnapshotReady(computed)
       }
     }
   }
@@ -474,7 +483,7 @@ struct InsightsPanel: View {
   }
 }
 
-private struct ScanInsightsSnapshot: Sendable {
+struct ScanInsightsSnapshot: Sendable {
   struct RankedNode: Identifiable, Sendable {
     let node: FileNode
     let depth: Int

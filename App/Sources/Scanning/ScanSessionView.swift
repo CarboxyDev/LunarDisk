@@ -91,6 +91,7 @@ struct ScanSessionView: View {
   @State private var selectedSection: SessionSection = .overview
   @State private var revealHeader = false
   @State private var revealBody = false
+  @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -177,6 +178,7 @@ struct ScanSessionView: View {
       if newRootID == nil {
         selectedSection = .overview
       }
+      cachedInsightsSnapshot = nil
     }
   }
 
@@ -463,10 +465,16 @@ struct ScanSessionView: View {
       }
 
     case .insights:
+      let cacheKey = insightsCacheKey(for: rootNode)
       InsightsPanel(
         rootNode: rootNode,
         warningMessage: warningMessage,
-        onRevealInFinder: onRevealInFinder
+        onRevealInFinder: onRevealInFinder,
+        cacheKey: cacheKey,
+        cachedSnapshot: cachedInsightsSnapshot?.key == cacheKey ? cachedInsightsSnapshot?.snapshot : nil,
+        onSnapshotReady: { snapshot in
+          cachedInsightsSnapshot = (key: cacheKey, snapshot: snapshot)
+        }
       )
 
     case .actions:
@@ -844,6 +852,10 @@ struct ScanSessionView: View {
       return node.path
     }
     return node.name
+  }
+
+  private func insightsCacheKey(for node: FileNode) -> String {
+    "\(node.id)|\(node.sizeBytes)|\(node.children.count)"
   }
 
   private func animateEntranceIfNeeded() {
