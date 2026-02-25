@@ -1,5 +1,17 @@
 import Foundation
 
+public struct ScanProgress: Equatable, Sendable {
+  public let itemsScanned: Int
+  public let bytesScanned: Int64
+  public let currentDirectory: String
+
+  public init(itemsScanned: Int, bytesScanned: Int64, currentDirectory: String) {
+    self.itemsScanned = itemsScanned
+    self.bytesScanned = bytesScanned
+    self.currentDirectory = currentDirectory
+  }
+}
+
 public struct ScanDiagnostics: Equatable, Sendable {
   public let skippedItemCount: Int
   public let sampledSkippedPaths: [String]
@@ -22,12 +34,17 @@ public enum ScanSizeStrategy: String, CaseIterable, Sendable {
 public protocol FileScanning: Sendable {
   func scan(at url: URL, maxDepth: Int?) async throws -> FileNode
   func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy) async throws -> FileNode
+  func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy, onProgress: (@Sendable (ScanProgress) -> Void)?) async throws -> FileNode
   func lastScanDiagnostics() async -> ScanDiagnostics?
 }
 
 public extension FileScanning {
   func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy) async throws -> FileNode {
     try await scan(at: url, maxDepth: maxDepth)
+  }
+
+  func scan(at url: URL, maxDepth: Int?, sizeStrategy: ScanSizeStrategy, onProgress: (@Sendable (ScanProgress) -> Void)?) async throws -> FileNode {
+    try await scan(at: url, maxDepth: maxDepth, sizeStrategy: sizeStrategy)
   }
 
   func lastScanDiagnostics() async -> ScanDiagnostics? {
@@ -62,6 +79,10 @@ public actor DirectoryScanner: FileScanning {
   private var skippedItemCount = 0
   private var sampledSkippedPaths: [String] = []
   private var latestScanDiagnostics: ScanDiagnostics?
+  private var scanProgressHandler: (@Sendable (ScanProgress) -> Void)?
+  private var progressItemCount = 0
+  private var progressBytesScanned: Int64 = 0
+  private var lastProgressReportDate: Date?
 
   public init(fileManager: FileManager = .default) {
     self.fileManager = fileManager
@@ -76,7 +97,20 @@ public actor DirectoryScanner: FileScanning {
     maxDepth: Int? = nil,
     sizeStrategy: ScanSizeStrategy
   ) async throws -> FileNode {
+    try await scan(at: url, maxDepth: maxDepth, sizeStrategy: sizeStrategy, onProgress: nil)
+  }
+
+  public func scan(
+    at url: URL,
+    maxDepth: Int? = nil,
+    sizeStrategy: ScanSizeStrategy,
+    onProgress: (@Sendable (ScanProgress) -> Void)? = nil
+  ) async throws -> FileNode {
     resetDiagnostics()
+    scanProgressHandler = onProgress
+    progressItemCount = 0
+    progressBytesScanned = 0
+    lastProgressReportDate = nil
     try Task.checkCancellation()
     guard fileManager.fileExists(atPath: url.path) else {
       throw ScanError.notFound(path: url.path)
@@ -177,6 +211,11 @@ public actor DirectoryScanner: FileScanning {
           preloadedValues: childValues
         )
         children.append(childNode)
+        progressItemCount += 1
+        if !childNode.isDirectory {
+          progressBytesScanned += childNode.sizeBytes
+        }
+        reportProgressIfNeeded(currentDirectory: url.path)
       } catch {
         if shouldSkip(error: error) {
           noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
@@ -309,6 +348,19 @@ public actor DirectoryScanner: FileScanning {
     skippedItemCount = 0
     sampledSkippedPaths = []
     latestScanDiagnostics = nil
+  }
+
+  private func reportProgressIfNeeded(currentDirectory: String) {
+    let now = Date()
+    let isFirstReport = lastProgressReportDate == nil
+    let enoughTimeElapsed = lastProgressReportDate.map { now.timeIntervalSince($0) >= 0.35 } ?? false
+    guard isFirstReport || enoughTimeElapsed else { return }
+    lastProgressReportDate = now
+    scanProgressHandler?(ScanProgress(
+      itemsScanned: progressItemCount,
+      bytesScanned: progressBytesScanned,
+      currentDirectory: currentDirectory
+    ))
   }
 
   private func noteSkipped(path: String) {

@@ -76,6 +76,7 @@ struct ScanSessionView: View {
   let rootNode: FileNode?
   let insights: [Insight]
   let isScanning: Bool
+  let scanProgress: ScanProgress?
   let warningMessage: String?
   let failure: AppModel.ScanFailure?
   let canStartScan: Bool
@@ -447,11 +448,7 @@ struct ScanSessionView: View {
     ScanningStatePanel(
       title: "Scanning Storage",
       message: "Reading metadata and calculating folder sizes locally on your Mac.",
-      steps: [
-        "Finding files and folders",
-        "Calculating folder sizes",
-        "Building Top Items"
-      ]
+      progress: scanProgress
     )
   }
 

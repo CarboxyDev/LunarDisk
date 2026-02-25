@@ -1,10 +1,10 @@
+import CoreScan
 import SwiftUI
 
 struct ScanningStatePanel: View {
   let title: String
   let message: String
-  let steps: [String]
-  @State private var activeStepIndex = 0
+  let progress: ScanProgress?
 
   var body: some View {
     VStack(spacing: 18) {
@@ -26,32 +26,53 @@ struct ScanningStatePanel: View {
 
       scanLiveBadge
 
-      HStack(spacing: 8) {
+      HStack(alignment: .top, spacing: 10) {
         ProgressView()
           .controlSize(.small)
           .tint(AppTheme.Colors.textSecondary)
+          .padding(.top, 2)
 
-        Text(activeStepText)
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-          .lineLimit(1)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(progressPrimaryText)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .lineLimit(1)
+            .contentTransition(.numericText(countsDown: false))
+            .animation(.easeOut(duration: 0.2), value: progress?.itemsScanned)
+
+          Text(progressSecondaryText)
+            .font(.system(size: 11, weight: .regular))
+            .foregroundStyle(AppTheme.Colors.textTertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+        .frame(width: 380, alignment: .leading)
       }
       .padding(.top, 12)
-      .frame(maxWidth: .infinity, alignment: .center)
     }
     .padding(.horizontal, 24)
     .padding(.vertical, 28)
     .frame(maxWidth: 780)
     .frame(maxWidth: .infinity, alignment: .center)
     .lunarPanelBackground()
-    .onReceive(
-      Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
-    ) { _ in
-      guard !steps.isEmpty else { return }
-      withAnimation(.easeInOut(duration: 0.2)) {
-        activeStepIndex = (activeStepIndex + 1) % steps.count
-      }
+  }
+
+  private var progressPrimaryText: String {
+    guard let progress else { return "Scanning…" }
+    return "\(progress.itemsScanned.formatted()) items · \(ByteFormatter.string(from: progress.bytesScanned))"
+  }
+
+  private var progressSecondaryText: String {
+    guard let progress else { return " " }
+    return friendlyPath(progress.currentDirectory)
+  }
+
+  private func friendlyPath(_ path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    if path.hasPrefix(home) {
+      return "~" + path.dropFirst(home.count)
     }
+    return path
   }
 
   private var scanLiveBadge: some View {
@@ -75,12 +96,6 @@ struct ScanningStatePanel: View {
     )
   }
 
-  private var activeStepText: String {
-    guard !steps.isEmpty else {
-      return "Scanning…"
-    }
-    return steps[activeStepIndex]
-  }
 }
 
 private struct AnimatedScanGlyph: View {

@@ -86,6 +86,7 @@ struct RootView: View {
         rootNode: model.rootNode,
         insights: model.insights,
         isScanning: model.isScanning,
+        scanProgress: model.scanProgress,
         warningMessage: model.scanWarningMessage,
         failure: model.lastFailure,
         canStartScan: model.canStartScan,

@@ -44,12 +44,13 @@ public struct RadialBreakdownChartView: View {
   private let childrenByParentID: [String: [RadialBreakdownArc]]
   private let palette: [Color]
   private let maxDepth: Int
+  private let onPinnedPathChange: ((String?) -> Void)?
 
   @State private var hoveredArcID: String?
   @State private var pinnedArcID: String?
 
   public init(root: FileNode) {
-    self.init(root: root, palette: Self.defaultPalette)
+    self.init(root: root, palette: Self.defaultPalette, onPinnedPathChange: nil)
   }
 
   public init(
@@ -58,7 +59,8 @@ public struct RadialBreakdownChartView: View {
     maxDepth: Int = 4,
     maxChildrenPerNode: Int = 12,
     minVisibleFraction: Double = 0.012,
-    maxArcCount: Int = 2_000
+    maxArcCount: Int = 2_000,
+    onPinnedPathChange: ((String?) -> Void)? = nil
   ) {
     let arcs = RadialBreakdownLayout.makeArcs(
       from: root,
@@ -90,6 +92,7 @@ public struct RadialBreakdownChartView: View {
     self.childrenByParentID = groupedChildren
     self.palette = palette.isEmpty ? Self.defaultPalette : palette
     self.maxDepth = max(arcs.map(\.depth).max() ?? 1, 1)
+    self.onPinnedPathChange = onPinnedPathChange
   }
 
   public var body: some View {
@@ -165,6 +168,10 @@ public struct RadialBreakdownChartView: View {
               }
             }
         )
+        .onChange(of: pinnedArcID) { _, pinnedArcID in
+          let path = pinnedArcID.flatMap { arcsByID[$0]?.path }
+          onPinnedPathChange?(path)
+        }
 
         totalBadge(using: metrics)
       }

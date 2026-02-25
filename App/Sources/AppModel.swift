@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var lastFailure: ScanFailure?
   @Published var scanWarningMessage: String?
+  @Published var scanProgress: ScanProgress?
   // Internal-only toggle for scan sizing semantics until we add an advanced settings UI.
   var scanSizeStrategy: ScanSizeStrategy = .allocated
 
@@ -80,6 +81,7 @@ final class AppModel: ObservableObject {
     insightsTask = nil
     isScanning = false
     scanWarningMessage = nil
+    scanProgress = nil
   }
 
   private func scan(url: URL, scanID: UUID) async {
@@ -88,6 +90,7 @@ final class AppModel: ObservableObject {
     defer {
       if activeScanID == scanID {
         isScanning = false
+        scanProgress = nil
         scanTask = nil
         activeScanID = nil
       }
@@ -96,13 +99,23 @@ final class AppModel: ObservableObject {
     insights = []
     lastFailure = nil
     scanWarningMessage = nil
+    scanProgress = nil
+
+    let progressScanID = scanID
+    let progressHandler: @Sendable (ScanProgress) -> Void = { [weak self] progress in
+      Task { @MainActor [weak self] in
+        guard let self, self.activeScanID == progressScanID else { return }
+        self.scanProgress = progress
+      }
+    }
 
     do {
       try Task.checkCancellation()
       let scannedRoot = try await scanner.scan(
         at: url,
         maxDepth: 8,
-        sizeStrategy: scanSizeStrategy
+        sizeStrategy: scanSizeStrategy,
+        onProgress: progressHandler
       )
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }

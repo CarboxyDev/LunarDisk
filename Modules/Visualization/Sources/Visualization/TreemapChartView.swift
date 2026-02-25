@@ -22,15 +22,21 @@ public struct TreemapChartView: View {
   private let cellsByID: [String: TreemapCell]
   private let palette: [Color]
   private let density: TreemapDensity
+  private let onPinnedPathChange: ((String?) -> Void)?
 
   @State private var hoveredCellID: String?
   @State private var pinnedCellID: String?
 
   public init(root: FileNode) {
-    self.init(root: root, palette: Self.defaultPalette, density: .clean)
+    self.init(root: root, palette: Self.defaultPalette, density: .clean, onPinnedPathChange: nil)
   }
 
-  public init(root: FileNode, palette: [Color], density: TreemapDensity = .clean) {
+  public init(
+    root: FileNode,
+    palette: [Color],
+    density: TreemapDensity = .clean,
+    onPinnedPathChange: ((String?) -> Void)? = nil
+  ) {
     self.density = density
     let parameters = Self.layoutParameters(for: density)
     let cells = TreemapLayout.makeCells(
@@ -50,6 +56,7 @@ public struct TreemapChartView: View {
     }
     cellsByID = Dictionary(uniqueKeysWithValues: cells.map { ($0.id, $0) })
     self.palette = palette.isEmpty ? Self.defaultPalette : palette
+    self.onPinnedPathChange = onPinnedPathChange
   }
 
   public var body: some View {
@@ -104,6 +111,10 @@ public struct TreemapChartView: View {
         case .ended:
           hoveredCellID = nil
         }
+      }
+      .onChange(of: pinnedCellID) { _, pinnedCellID in
+        let path = pinnedCellID.flatMap { cellsByID[$0]?.path }
+        onPinnedPathChange?(path)
       }
       .animation(.easeInOut(duration: 0.12), value: hoveredCellID)
       .animation(.easeInOut(duration: 0.16), value: pinnedCellID)
