@@ -79,11 +79,6 @@ struct ScanSessionView: View {
     case failure(AppModel.ScanFailure)
   }
 
-  private enum RadialDrillTransitionDirection {
-    case deeper
-    case shallower
-  }
-
   private enum Layout {
     static let sectionSpacing: CGFloat = 16
     static let sideColumnWidth: CGFloat = 420
@@ -116,7 +111,6 @@ struct ScanSessionView: View {
   @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
   @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
   @State private var radialDrillPathStack: [String] = []
-  @State private var radialDrillTransitionDirection: RadialDrillTransitionDirection = .deeper
   @State private var overviewSupplementalMode: OverviewSupplementalMode = .details
   @State private var radialHoverSnapshot: RadialBreakdownInspectorSnapshot?
   @State private var radialRootSnapshot: RadialBreakdownInspectorSnapshot?
@@ -157,15 +151,6 @@ struct ScanSessionView: View {
     !isScanning && rootNode != nil
   }
 
-  private var radialDrillFocusTransition: AnyTransition {
-    let insertionEdge: Edge = radialDrillTransitionDirection == .deeper ? .trailing : .leading
-    let removalEdge: Edge = radialDrillTransitionDirection == .deeper ? .leading : .trailing
-    return .asymmetric(
-      insertion: .opacity.combined(with: .move(edge: insertionEdge)),
-      removal: .opacity.combined(with: .move(edge: removalEdge))
-    )
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
       sessionHeader
@@ -204,7 +189,6 @@ struct ScanSessionView: View {
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .animation(.spring(response: 0.38, dampingFraction: 0.9), value: phaseID)
     .animation(.easeInOut(duration: 0.2), value: selectedSection)
-    .animation(.spring(response: 0.34, dampingFraction: 0.9), value: radialDrillPathStack)
     .onAppear {
       animateEntranceIfNeeded()
     }
@@ -506,8 +490,6 @@ struct ScanSessionView: View {
           partialScanBanner(warningMessage)
         }
         resultsContent(rootNode: focusedNode, scanRootNode: rootNode)
-          .id("overview-focus-\(focusedNode.path)")
-          .transition(radialDrillFocusTransition)
       }
 
     case .insights:
@@ -1009,7 +991,6 @@ struct ScanSessionView: View {
   private func resetRadialDrill(for rootNode: FileNode?) {
     clearRadialInspectorSnapshots()
     overviewSupplementalMode = defaultSupplementalMode(for: breakdownViewMode)
-    radialDrillTransitionDirection = .deeper
     if let rootNode {
       radialDrillPathStack = [rootNode.path]
     } else {
@@ -1059,19 +1040,13 @@ struct ScanSessionView: View {
     guard nextStack != currentStack else { return }
 
     clearRadialInspectorSnapshots()
-    radialDrillTransitionDirection = nextStack.count >= currentStack.count ? .deeper : .shallower
-    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
-      radialDrillPathStack = nextStack
-    }
+    radialDrillPathStack = nextStack
   }
 
   private func jumpToRadialBreadcrumb(path: String) {
     guard let index = radialDrillPathStack.firstIndex(of: path) else { return }
     clearRadialInspectorSnapshots()
-    radialDrillTransitionDirection = .shallower
-    withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
-      radialDrillPathStack = Array(radialDrillPathStack.prefix(index + 1))
-    }
+    radialDrillPathStack = Array(radialDrillPathStack.prefix(index + 1))
   }
 
   private func nodePathChain(to targetPath: String, in rootNode: FileNode) -> [FileNode]? {
