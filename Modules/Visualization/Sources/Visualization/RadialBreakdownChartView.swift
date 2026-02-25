@@ -29,10 +29,13 @@ public struct RadialBreakdownChartView: View {
 
   private let rootSizeBytes: Int64
   private let rootArcID: String
-  private let arcs: [RadialBreakdownArc]
+  private let nonRootArcs: [RadialBreakdownArc]
+  private let arcsByDepth: [Int: [RadialBreakdownArc]]
   private let arcsByID: [String: RadialBreakdownArc]
   private let parentIDsByID: [String: String?]
   private let childrenByParentID: [String: [RadialBreakdownArc]]
+  private let baseColorByArcID: [String: Color]
+  private let inspectorSnapshotByArcID: [String: RadialBreakdownInspectorSnapshot]
   private let palette: [Color]
   private let maxDepth: Int
   private let onPathActivated: ((String) -> Void)?
@@ -65,9 +68,19 @@ public struct RadialBreakdownChartView: View {
       minVisibleFraction: minVisibleFraction,
       maxArcCount: maxArcCount
     )
+    let nonRootArcs = arcs.filter { $0.depth > 0 }
+    var groupedByDepth: [Int: [RadialBreakdownArc]] = [:]
+    for arc in nonRootArcs {
+      groupedByDepth[arc.depth, default: []].append(arc)
+    }
+    for key in groupedByDepth.keys {
+      groupedByDepth[key]?.sort { lhs, rhs in
+        lhs.startAngle < rhs.startAngle
+      }
+    }
 
     var groupedChildren: [String: [RadialBreakdownArc]] = [:]
-    for arc in arcs where arc.depth > 0 {
+    for arc in nonRootArcs {
       guard let parentID = arc.parentID else { continue }
       groupedChildren[parentID, default: []].append(arc)
     }
@@ -79,14 +92,63 @@ public struct RadialBreakdownChartView: View {
         return lhs.label < rhs.label
       }
     }
+    let resolvedPalette = palette.isEmpty ? Self.defaultPalette : palette
+    var cachedBaseColors: [String: Color] = [:]
+    for arc in nonRootArcs {
+      cachedBaseColors[arc.id] = Self.makeBaseColor(for: arc, palette: resolvedPalette)
+    }
+
+    let safeRootSize = max(root.sizeBytes, 1)
+    var cachedInspectorSnapshots: [String: RadialBreakdownInspectorSnapshot] = [:]
+    cachedInspectorSnapshots.reserveCapacity(arcs.count)
+    for arc in arcs {
+      let children = groupedChildren[arc.id] ?? []
+      let snapshotChildren: [RadialBreakdownInspectorChild]
+      if children.isEmpty {
+        snapshotChildren = [
+          RadialBreakdownInspectorChild(
+            id: "\(arc.id)-none",
+            label: "No contained items",
+            sizeBytes: nil,
+            symbolName: "tray.fill",
+            isMuted: true
+          )
+        ]
+      } else {
+        snapshotChildren = Array(children.prefix(Self.inspectorRowCapacity)).map { childArc in
+          RadialBreakdownInspectorChild(
+            id: childArc.id,
+            label: Self.label(for: childArc),
+            sizeBytes: childArc.sizeBytes,
+            symbolName: Self.symbolName(for: childArc),
+            isMuted: false
+          )
+        }
+      }
+
+      cachedInspectorSnapshots[arc.id] = RadialBreakdownInspectorSnapshot(
+        id: arc.id,
+        label: Self.label(for: arc),
+        path: arc.path,
+        sizeBytes: arc.sizeBytes,
+        shareOfRoot: max(0, min(1, Double(arc.sizeBytes) / Double(safeRootSize))),
+        symbolName: Self.symbolName(for: arc),
+        isDirectory: arc.isDirectory,
+        isAggregate: arc.isAggregate,
+        children: snapshotChildren
+      )
+    }
 
     self.rootSizeBytes = root.sizeBytes
     self.rootArcID = arcs.first(where: { $0.depth == 0 })?.id ?? root.id
-    self.arcs = arcs
+    self.nonRootArcs = nonRootArcs
+    self.arcsByDepth = groupedByDepth
     self.arcsByID = Dictionary(uniqueKeysWithValues: arcs.map { ($0.id, $0) })
     self.parentIDsByID = Dictionary(uniqueKeysWithValues: arcs.map { ($0.id, $0.parentID) })
     self.childrenByParentID = groupedChildren
-    self.palette = palette.isEmpty ? Self.defaultPalette : palette
+    self.baseColorByArcID = cachedBaseColors
+    self.inspectorSnapshotByArcID = cachedInspectorSnapshots
+    self.palette = resolvedPalette
     self.maxDepth = max(arcs.map(\.depth).max() ?? 1, 1)
     self.onPathActivated = onPathActivated
     self.pinnedArcID = pinnedArcID
@@ -112,14 +174,16 @@ public struct RadialBreakdownChartView: View {
     GeometryReader { geometry in
       let metrics = chartMetrics(in: geometry.size)
       let selection = currentSelection
+      let relatedArcIDs = relatedArcIDs(for: selection?.id)
 
       ZStack {
         Canvas { context, _ in
-          for arc in arcs where arc.depth > 0 {
+          for arc in nonRootArcs {
             drawArc(
               arc,
               using: metrics,
               activeArcID: selection?.id,
+              relatedArcIDs: relatedArcIDs,
               context: &context
             )
           }
@@ -148,7 +212,6 @@ public struct RadialBreakdownChartView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .contentShape(Rectangle())
       .clipped()
-      .animation(.easeInOut(duration: 0.12), value: hoveredArcID)
       .animation(.easeInOut(duration: 0.12), value: pinnedArcID)
     }
   }
@@ -164,52 +227,10 @@ public struct RadialBreakdownChartView: View {
   }
 
   private func makeInspectorSnapshot(forArcID arcID: String?) -> RadialBreakdownInspectorSnapshot? {
-    guard let arcID, let arc = arcsByID[arcID] else {
+    guard let arcID else {
       return nil
     }
-    return makeInspectorSnapshot(for: arc)
-  }
-
-  private func makeInspectorSnapshot(for arc: RadialBreakdownArc) -> RadialBreakdownInspectorSnapshot {
-    let shareOfRoot = Double(arc.sizeBytes) / Double(max(rootSizeBytes, 1))
-    let children = makeInspectorChildren(for: arc)
-
-    return RadialBreakdownInspectorSnapshot(
-      id: arc.id,
-      label: label(for: arc),
-      path: arc.path,
-      sizeBytes: arc.sizeBytes,
-      shareOfRoot: max(0, min(1, shareOfRoot)),
-      symbolName: symbolName(for: arc),
-      isDirectory: arc.isDirectory,
-      isAggregate: arc.isAggregate,
-      children: children
-    )
-  }
-
-  private func makeInspectorChildren(for arc: RadialBreakdownArc) -> [RadialBreakdownInspectorChild] {
-    let children = childrenByParentID[arc.id] ?? []
-    if children.isEmpty {
-      return [
-        RadialBreakdownInspectorChild(
-          id: "\(arc.id)-none",
-          label: "No contained items",
-          sizeBytes: nil,
-          symbolName: "tray.fill",
-          isMuted: true
-        )
-      ]
-    }
-
-    return Array(children.prefix(Self.inspectorRowCapacity)).map { childArc in
-      RadialBreakdownInspectorChild(
-        id: childArc.id,
-        label: label(for: childArc),
-        sizeBytes: childArc.sizeBytes,
-        symbolName: symbolName(for: childArc),
-        isMuted: false
-      )
-    }
+    return inspectorSnapshotByArcID[arcID]
   }
 
   private func chartMetrics(in size: CGSize) -> ChartMetrics {
@@ -247,21 +268,14 @@ public struct RadialBreakdownChartView: View {
     guard radius <= metrics.chartRadius else { return nil }
 
     let angle = normalizedAngle(from: atan2(dy, dx))
-    let candidates = arcs
-      .filter { $0.depth > 0 }
-      .sorted { lhs, rhs in
-        if lhs.depth == rhs.depth {
-          return lhs.span < rhs.span
-        }
-        return lhs.depth > rhs.depth
-      }
-
-    for arc in candidates {
+    for depth in hitTestDepthCandidates(for: radius, metrics: metrics) {
+      guard let depthArcs = arcsByDepth[depth] else { continue }
+      guard let arc = arc(at: angle, in: depthArcs) else { continue }
       let ringBounds = metrics.ringBounds(for: arc.depth)
       guard radius >= ringBounds.inner, radius <= ringBounds.outer else { continue }
-      guard angle >= arc.startAngle, angle <= arc.endAngle else { continue }
       return arc
     }
+
     return nil
   }
 
@@ -269,6 +283,7 @@ public struct RadialBreakdownChartView: View {
     _ arc: RadialBreakdownArc,
     using metrics: ChartMetrics,
     activeArcID: String?,
+    relatedArcIDs: Set<String>?,
     context: inout GraphicsContext
   ) {
     let ringBounds = metrics.ringBounds(for: arc.depth)
@@ -299,7 +314,7 @@ public struct RadialBreakdownChartView: View {
     path.closeSubpath()
 
     let isSelected = activeArcID == arc.id
-    context.fill(path, with: .color(color(for: arc, activeArcID: activeArcID)))
+    context.fill(path, with: .color(color(for: arc, activeArcID: activeArcID, relatedArcIDs: relatedArcIDs)))
     context.stroke(
       path,
       with: .color(isSelected ? Color.white.opacity(0.93) : Color.white.opacity(0.2)),
@@ -307,13 +322,13 @@ public struct RadialBreakdownChartView: View {
     )
   }
 
-  private func color(for arc: RadialBreakdownArc, activeArcID: String?) -> Color {
-    let base = baseColor(for: arc)
+  private func color(for arc: RadialBreakdownArc, activeArcID: String?, relatedArcIDs: Set<String>?) -> Color {
+    let base = baseColorByArcID[arc.id] ?? Self.makeBaseColor(for: arc, palette: palette)
     let depthOpacity = max(0.62, 0.94 - (Double(max(arc.depth - 1, 0)) * 0.08))
     let opacity: Double
 
     if let activeArcID {
-      if isRelated(arcID: arc.id, activeArcID: activeArcID) {
+      if relatedArcIDs?.contains(arc.id) == true {
         opacity = arc.id == activeArcID ? min(depthOpacity + 0.08, 1) : depthOpacity
       } else {
         opacity = depthOpacity * 0.26
@@ -325,7 +340,7 @@ public struct RadialBreakdownChartView: View {
     return base.opacity(opacity)
   }
 
-  private func baseColor(for arc: RadialBreakdownArc) -> Color {
+  private static func makeBaseColor(for arc: RadialBreakdownArc, palette: [Color]) -> Color {
     if arc.isAggregate {
       return Color.gray
     }
@@ -339,7 +354,7 @@ public struct RadialBreakdownChartView: View {
     return base.opacity(1 - depthShift)
   }
 
-  private func stableHash64(of value: String) -> UInt64 {
+  private static func stableHash64(of value: String) -> UInt64 {
     var hash: UInt64 = 1_469_598_103_934_665_603
     let prime: UInt64 = 1_099_511_628_211
 
@@ -351,21 +366,62 @@ public struct RadialBreakdownChartView: View {
     return hash
   }
 
-  private func isRelated(arcID: String, activeArcID: String) -> Bool {
-    arcID == activeArcID
-      || isAncestor(candidateAncestorID: arcID, arcID: activeArcID)
-      || isAncestor(candidateAncestorID: activeArcID, arcID: arcID)
+  private func relatedArcIDs(for activeArcID: String?) -> Set<String>? {
+    guard let activeArcID else { return nil }
+    guard arcsByID[activeArcID] != nil else { return nil }
+
+    var related: Set<String> = [activeArcID]
+
+    var parentCursor = parentIDsByID[activeArcID] ?? nil
+    while let parent = parentCursor {
+      related.insert(parent)
+      parentCursor = parentIDsByID[parent] ?? nil
+    }
+
+    var childStack: [RadialBreakdownArc] = childrenByParentID[activeArcID] ?? []
+    while let child = childStack.popLast() {
+      related.insert(child.id)
+      if let grandchildren = childrenByParentID[child.id] {
+        childStack.append(contentsOf: grandchildren)
+      }
+    }
+
+    return related
   }
 
-  private func isAncestor(candidateAncestorID: String, arcID: String) -> Bool {
-    var cursor = parentIDsByID[arcID] ?? nil
-    while let currentParent = cursor {
-      if currentParent == candidateAncestorID {
-        return true
+  private func hitTestDepthCandidates(for radius: CGFloat, metrics: ChartMetrics) -> [Int] {
+    let bandWidth = max(metrics.ringBandWidth, 0.0001)
+    let estimatedDepth = Int(floor((radius - metrics.donutRadius) / bandWidth)) + 1
+    let candidates = [estimatedDepth, estimatedDepth + 1, estimatedDepth - 1]
+    var ordered: [Int] = []
+    ordered.reserveCapacity(3)
+
+    for depth in candidates where depth >= 1 && depth <= maxDepth {
+      if !ordered.contains(depth) {
+        ordered.append(depth)
       }
-      cursor = parentIDsByID[currentParent] ?? nil
     }
-    return false
+    return ordered
+  }
+
+  private func arc(at angle: Double, in arcs: [RadialBreakdownArc]) -> RadialBreakdownArc? {
+    guard !arcs.isEmpty else { return nil }
+    var low = 0
+    var high = arcs.count - 1
+
+    while low <= high {
+      let mid = (low + high) / 2
+      let arc = arcs[mid]
+      if angle < arc.startAngle {
+        high = mid - 1
+      } else if angle > arc.endAngle {
+        low = mid + 1
+      } else {
+        return arc
+      }
+    }
+
+    return nil
   }
 
   @ViewBuilder
@@ -414,7 +470,7 @@ public struct RadialBreakdownChartView: View {
     return (value: value, unit: unit.isEmpty ? nil : unit)
   }
 
-  private func symbolName(for arc: RadialBreakdownArc) -> String {
+  private static func symbolName(for arc: RadialBreakdownArc) -> String {
     if arc.isAggregate {
       return "ellipsis.circle.fill"
     }
@@ -445,7 +501,7 @@ public struct RadialBreakdownChartView: View {
     }
   }
 
-  private func label(for arc: RadialBreakdownArc) -> String {
+  private static func label(for arc: RadialBreakdownArc) -> String {
     if arc.isAggregate {
       return "Smaller objects..."
     }
