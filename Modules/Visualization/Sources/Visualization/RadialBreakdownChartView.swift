@@ -17,15 +17,6 @@ public struct RadialBreakdownChartView: View {
     }
   }
 
-  private struct InspectorRow: Identifiable {
-    let id: String
-    let label: String
-    let sizeText: String
-    let symbolName: String
-    let isPlaceholder: Bool
-    let isMuted: Bool
-  }
-
   private static let defaultPalette: [Color] = [
     Color(red: 78 / 255, green: 168 / 255, blue: 230 / 255),
     Color(red: 104 / 255, green: 205 / 255, blue: 176 / 255),
@@ -45,6 +36,9 @@ public struct RadialBreakdownChartView: View {
   private let palette: [Color]
   private let maxDepth: Int
   private let onPathActivated: ((String) -> Void)?
+  private let pinnedArcID: String?
+  private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
+  private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
 
   @State private var hoveredArcID: String?
 
@@ -59,7 +53,10 @@ public struct RadialBreakdownChartView: View {
     maxChildrenPerNode: Int = 12,
     minVisibleFraction: Double = 0.012,
     maxArcCount: Int = 2_000,
-    onPathActivated: ((String) -> Void)? = nil
+    onPathActivated: ((String) -> Void)? = nil,
+    pinnedArcID: String? = nil,
+    onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil,
+    onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil
   ) {
     let arcs = RadialBreakdownLayout.makeArcs(
       from: root,
@@ -92,43 +89,23 @@ public struct RadialBreakdownChartView: View {
     self.palette = palette.isEmpty ? Self.defaultPalette : palette
     self.maxDepth = max(arcs.map(\.depth).max() ?? 1, 1)
     self.onPathActivated = onPathActivated
+    self.pinnedArcID = pinnedArcID
+    self.onHoverSnapshotChanged = onHoverSnapshotChanged
+    self.onRootSnapshotReady = onRootSnapshotReady
   }
 
   public var body: some View {
-    GeometryReader { geometry in
-      let isWide = geometry.size.width >= 820
-
-      Group {
-        if isWide {
-          HStack(alignment: .top, spacing: 14) {
-            chartSurface
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Rectangle()
-              .fill(Color.white.opacity(0.08))
-              .frame(width: 1)
-
-            inspectorPanel
-              .frame(width: min(380, geometry.size.width * 0.34), alignment: .topLeading)
-          }
-        } else {
-          VStack(spacing: 12) {
-            chartSurface
-              .frame(maxWidth: .infinity)
-              .frame(height: max(210, geometry.size.height * 0.6))
-
-            Divider()
-              .overlay(Color.white.opacity(0.08))
-
-            inspectorPanel
-          }
-        }
-      }
+    chartSurface
       .padding(14)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .clipped()
-    }
-    .clipped()
+      .onAppear {
+        onRootSnapshotReady?(makeInspectorSnapshot(forArcID: rootArcID))
+        onHoverSnapshotChanged?(nil)
+      }
+      .onChange(of: hoveredArcID) { _, newHoveredArcID in
+        onHoverSnapshotChanged?(makeInspectorSnapshot(forArcID: newHoveredArcID))
+      }
   }
 
   private var chartSurface: some View {
@@ -172,175 +149,67 @@ public struct RadialBreakdownChartView: View {
       .contentShape(Rectangle())
       .clipped()
       .animation(.easeInOut(duration: 0.12), value: hoveredArcID)
+      .animation(.easeInOut(duration: 0.12), value: pinnedArcID)
     }
-  }
-
-  private var inspectorPanel: some View {
-    let inspectedArc = currentSelection ?? arcsByID[rootArcID]
-    let rows = makeInspectorRows(for: inspectedArc)
-
-    return VStack(alignment: .leading, spacing: 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text("Details")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(Color.primary.opacity(0.82))
-
-        Text("Hover to inspect • Click folders to drill down")
-          .font(.system(size: 10.5, weight: .medium))
-          .foregroundStyle(Color.primary.opacity(0.62))
-      }
-
-      selectionSummaryBlock(for: inspectedArc)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(
-          RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color.white.opacity(0.04))
-            .overlay(
-              RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
-            )
-        )
-
-      Divider()
-        .overlay(Color.white.opacity(0.08))
-
-      Text("Contains")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(0.82))
-
-      VStack(spacing: 6) {
-        ForEach(rows) { row in
-          inspectorRow(row)
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .padding(.top, 0)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-  }
-
-  @ViewBuilder
-  private func selectionSummaryBlock(for inspectedArc: RadialBreakdownArc?) -> some View {
-    if let inspectedArc {
-      let percentage = (Double(inspectedArc.sizeBytes) / Double(max(rootSizeBytes, 1))) * 100
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) {
-          Circle()
-            .fill(baseColor(for: inspectedArc))
-            .frame(width: 8, height: 8)
-
-          Text(label(for: inspectedArc))
-            .font(.system(size: 15, weight: .semibold))
-            .lineLimit(1)
-            .truncationMode(.middle)
-        }
-
-        Text("\(ByteFormatter.string(from: inspectedArc.sizeBytes)) • \(String(format: "%.1f", percentage))%")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(Color.primary.opacity(0.78))
-          .lineLimit(1)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    } else {
-      Text("No selection.")
-        .font(.system(size: 12, weight: .regular))
-        .foregroundStyle(Color.primary.opacity(0.72))
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-  }
-
-  private func makeInspectorRows(for inspectedArc: RadialBreakdownArc?) -> [InspectorRow] {
-    guard let inspectedArc else {
-      return placeholderRows(count: Self.inspectorRowCapacity)
-    }
-
-    let children = childrenByParentID[inspectedArc.id] ?? []
-    if children.isEmpty {
-      var rows: [InspectorRow] = [
-        InspectorRow(
-          id: "\(inspectedArc.id)-none",
-          label: "No contained items",
-          sizeText: "",
-          symbolName: "tray.fill",
-          isPlaceholder: false,
-          isMuted: true
-        )
-      ]
-      rows.append(contentsOf: placeholderRows(count: Self.inspectorRowCapacity - rows.count))
-      return rows
-    }
-
-    var rows: [InspectorRow] = Array(children.prefix(Self.inspectorRowCapacity)).map { arc in
-      InspectorRow(
-        id: arc.id,
-        label: label(for: arc),
-        sizeText: ByteFormatter.string(from: arc.sizeBytes),
-        symbolName: symbolName(for: arc),
-        isPlaceholder: false,
-        isMuted: false
-      )
-    }
-
-    if rows.count < Self.inspectorRowCapacity {
-      rows.append(contentsOf: placeholderRows(count: Self.inspectorRowCapacity - rows.count))
-    }
-    return rows
-  }
-
-  private func placeholderRows(count: Int) -> [InspectorRow] {
-    guard count > 0 else { return [] }
-    return (0..<count).map { index in
-      InspectorRow(
-        id: "placeholder-\(index)",
-        label: "",
-        sizeText: "",
-        symbolName: "circle.fill",
-        isPlaceholder: true,
-        isMuted: true
-      )
-    }
-  }
-
-  private func inspectorRow(_ row: InspectorRow) -> some View {
-    HStack(spacing: 10) {
-      Image(systemName: row.symbolName)
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(row.isMuted ? 0.45 : 0.68))
-        .frame(width: 14, alignment: .center)
-
-      Text(row.label)
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(Color.primary.opacity(row.isMuted ? 0.52 : 0.86))
-        .lineLimit(1)
-        .truncationMode(.middle)
-
-      Spacer(minLength: 8)
-
-      Text(row.sizeText)
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(0.72))
-        .lineLimit(1)
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
-    .frame(minHeight: 30)
-    .background(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .fill(Color.white.opacity(row.isPlaceholder ? 0 : 0.03))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(Color.white.opacity(row.isPlaceholder ? 0 : 0.07), lineWidth: 0.8)
-        )
-    )
-    .opacity(row.isPlaceholder ? 0 : 1)
   }
 
   private var currentSelection: RadialBreakdownArc? {
+    if let pinnedArcID, let pinned = arcsByID[pinnedArcID] {
+      return pinned
+    }
     if let hoveredArcID, let hovered = arcsByID[hoveredArcID] {
       return hovered
     }
     return nil
+  }
+
+  private func makeInspectorSnapshot(forArcID arcID: String?) -> RadialBreakdownInspectorSnapshot? {
+    guard let arcID, let arc = arcsByID[arcID] else {
+      return nil
+    }
+    return makeInspectorSnapshot(for: arc)
+  }
+
+  private func makeInspectorSnapshot(for arc: RadialBreakdownArc) -> RadialBreakdownInspectorSnapshot {
+    let shareOfRoot = Double(arc.sizeBytes) / Double(max(rootSizeBytes, 1))
+    let children = makeInspectorChildren(for: arc)
+
+    return RadialBreakdownInspectorSnapshot(
+      id: arc.id,
+      label: label(for: arc),
+      path: arc.path,
+      sizeBytes: arc.sizeBytes,
+      shareOfRoot: max(0, min(1, shareOfRoot)),
+      symbolName: symbolName(for: arc),
+      isDirectory: arc.isDirectory,
+      isAggregate: arc.isAggregate,
+      children: children
+    )
+  }
+
+  private func makeInspectorChildren(for arc: RadialBreakdownArc) -> [RadialBreakdownInspectorChild] {
+    let children = childrenByParentID[arc.id] ?? []
+    if children.isEmpty {
+      return [
+        RadialBreakdownInspectorChild(
+          id: "\(arc.id)-none",
+          label: "No contained items",
+          sizeBytes: nil,
+          symbolName: "tray.fill",
+          isMuted: true
+        )
+      ]
+    }
+
+    return Array(children.prefix(Self.inspectorRowCapacity)).map { childArc in
+      RadialBreakdownInspectorChild(
+        id: childArc.id,
+        label: label(for: childArc),
+        sizeBytes: childArc.sizeBytes,
+        symbolName: symbolName(for: childArc),
+        isMuted: false
+      )
+    }
   }
 
   private func chartMetrics(in size: CGSize) -> ChartMetrics {
