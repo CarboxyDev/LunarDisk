@@ -42,7 +42,6 @@ const FEATURES = [
 <section id="features" class="px-6 py-20 md:py-28">
   <div class="mx-auto max-w-6xl">
 
-    <!-- Section header -->
     <div class="mb-14 text-center">
       <h2
         data-animate
@@ -55,7 +54,6 @@ const FEATURES = [
       </p>
     </div>
 
-    <!-- Feature cards grid -->
     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {FEATURES.map((feature, i) => (
         <div
@@ -63,7 +61,6 @@ const FEATURES = [
           data-delay={String((i % 3) + 1)}
           class="group rounded-xl border border-border bg-card p-6 transition-shadow duration-200 hover:shadow-md"
         >
-          <!-- Icon -->
           <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
             {feature.icon === 'chart' && (
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

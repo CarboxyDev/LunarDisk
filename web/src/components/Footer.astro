@@ -21,13 +21,11 @@ const LINKS = [
 <footer class="border-t border-border px-6 py-12">
   <div class="mx-auto flex max-w-6xl flex-col items-center gap-6 text-center">
 
-    <!-- Logo -->
     <div class="flex items-center gap-2.5">
       <img src="/icon.svg" alt="LunarDisk" class="h-7 w-7 rounded-xl" />
       <span class="font-semibold text-foreground">LunarDisk</span>
     </div>
 
-    <!-- Links -->
     <div class="flex flex-wrap items-center justify-center gap-6">
       {LINKS.map(link => (
         <a
@@ -41,7 +39,6 @@ const LINKS = [
       ))}
     </div>
 
-    <!-- Copyright -->
     <p class="text-xs text-muted-foreground">
       &copy; {new Date().getFullYear()} LunarDisk. Built by{' '}
       <a

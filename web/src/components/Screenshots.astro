@@ -5,22 +5,21 @@ const SCREENS = [
     description:
       'Drill into any directory to see size breakdowns and file counts. Spot your largest storage consumers with precision.',
     image: '/screenshots/scan-view-insights.png',
-    alt: 'LunarDisk — scan view insights',
+    alt: 'LunarDisk scan view insights',
   },
   {
     title: 'Safe cleanup actions',
     description:
-      'Take action on what you find. Review exactly what you\'re about to delete before acting — no accidental removals.',
+      'Take action on what you find. Review exactly what you\'re about to delete before acting, with no accidental removals.',
     image: '/screenshots/scan-view-actions.png',
-    alt: 'LunarDisk — scan view actions',
+    alt: 'LunarDisk scan view actions',
   },
 ];
 ---
 
-<section id="screenshots" class="px-6 py-20 md:py-28">
+<section id="preview" class="px-6 py-20 md:py-28">
   <div class="mx-auto max-w-6xl">
 
-    <!-- Section header -->
     <div class="mb-16 text-center">
       <h2
         data-animate
@@ -33,7 +32,6 @@ const SCREENS = [
       </p>
     </div>
 
-    <!-- Alternating screenshot + text rows -->
     <div class="space-y-20">
       {SCREENS.map((screen, index) => (
         <div
@@ -42,13 +40,11 @@ const SCREENS = [
             index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'
           }`}
         >
-          <!-- Text -->
           <div class="flex-1 space-y-3">
             <h3 class="text-2xl font-semibold text-foreground">{screen.title}</h3>
             <p class="text-base leading-relaxed text-muted-foreground">{screen.description}</p>
           </div>
 
-          <!-- Screenshot -->
           <div class="w-full flex-[1.2]">
             <img
               src={screen.image}
