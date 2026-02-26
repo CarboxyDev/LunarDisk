@@ -5,17 +5,15 @@ struct ScanSetupView: View {
   private enum Layout {
     static let sectionSpacing: CGFloat = AppTheme.Metrics.cardSpacing
     static let headerSpacing: CGFloat = AppTheme.Metrics.titleSpacing
-    static let cardPadding: CGFloat = 16
+    static let cardPadding: CGFloat = 18
     static let primaryCardSpacing: CGFloat = 14
     static let standardCardSpacing: CGFloat = 12
+    static let subsectionSpacing: CGFloat = 8
     static let buttonRowSpacing: CGFloat = 10
-    static let pointSpacing: CGFloat = 10
-    static let pathSlotHorizontalPadding: CGFloat = 10
-    static let pathSlotVerticalPadding: CGFloat = 8
-    static let pathSlotCornerRadius: CGFloat = 8
-    static let secondaryColumnMinWidth: CGFloat = 300
-    static let secondaryColumnIdealWidth: CGFloat = 360
-    static let secondaryColumnMaxWidth: CGFloat = 420
+    static let pointSpacing: CGFloat = 9
+    static let targetSlotHorizontalPadding: CGFloat = 12
+    static let targetSlotVerticalPadding: CGFloat = 10
+    static let targetSlotCornerRadius: CGFloat = 10
     static let entranceOffsetHeader: CGFloat = 14
     static let entranceOffsetCard: CGFloat = 12
   }
@@ -32,14 +30,14 @@ struct ScanSetupView: View {
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
   @State private var revealHeader = false
   @State private var revealPrimaryCard = false
-  @State private var revealSecondaryStack = false
+  @State private var revealSupportCard = false
 
   private var hasSelectedFolder: Bool {
     selectedFolderPath != nil
   }
 
   private var entranceAnimation: Animation? {
-    accessibilityReduceMotion ? nil : .spring(response: 0.44, dampingFraction: 0.88)
+    accessibilityReduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88)
   }
 
   var body: some View {
@@ -54,45 +52,18 @@ struct ScanSetupView: View {
           .offset(y: revealHeader ? 0 : Layout.entranceOffsetCard)
       }
 
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-          folderScanPrimaryCard
-            .opacity(revealPrimaryCard ? 1 : 0)
-            .offset(y: revealPrimaryCard ? 0 : Layout.entranceOffsetCard)
+      primaryWorkflowCard
+        .opacity(revealPrimaryCard ? 1 : 0)
+        .offset(y: revealPrimaryCard ? 0 : Layout.entranceOffsetCard)
 
-          VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-            fullDiskCard
-            trustCard
-          }
-          .frame(
-            minWidth: Layout.secondaryColumnMinWidth,
-            idealWidth: Layout.secondaryColumnIdealWidth,
-            maxWidth: Layout.secondaryColumnMaxWidth,
-            alignment: .topLeading
-          )
-          .opacity(revealSecondaryStack ? 1 : 0)
-          .offset(y: revealSecondaryStack ? 0 : Layout.entranceOffsetCard)
-        }
-
-        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-          folderScanPrimaryCard
-            .opacity(revealPrimaryCard ? 1 : 0)
-            .offset(y: revealPrimaryCard ? 0 : Layout.entranceOffsetCard)
-
-          fullDiskCard
-            .opacity(revealSecondaryStack ? 1 : 0)
-            .offset(y: revealSecondaryStack ? 0 : Layout.entranceOffsetCard)
-
-          trustCard
-            .opacity(revealSecondaryStack ? 1 : 0)
-            .offset(y: revealSecondaryStack ? 0 : Layout.entranceOffsetCard)
-        }
-      }
+      permissionsAndPrivacyCard
+        .opacity(revealSupportCard ? 1 : 0)
+        .offset(y: revealSupportCard ? 0 : Layout.entranceOffsetCard)
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .animation(entranceAnimation, value: revealHeader)
     .animation(entranceAnimation, value: revealPrimaryCard)
-    .animation(entranceAnimation, value: revealSecondaryStack)
+    .animation(entranceAnimation, value: revealSupportCard)
     .onAppear {
       animateEntranceIfNeeded()
     }
@@ -108,16 +79,16 @@ struct ScanSetupView: View {
           .foregroundStyle(AppTheme.Colors.textPrimary)
       }
 
-      Text("Folder scan is fastest for iterative cleanup. Full-disk scan is available when you need complete system coverage.")
+      Text("Choose a scan target and start. Folder scan is the default for fast cleanup. Full-disk scan is available when you need complete coverage.")
         .font(AppTheme.Typography.body)
         .foregroundStyle(AppTheme.Colors.textTertiary)
     }
     .lunarSetupCard(padding: Layout.cardPadding)
   }
 
-  private var folderScanPrimaryCard: some View {
+  private var primaryWorkflowCard: some View {
     VStack(alignment: .leading, spacing: Layout.primaryCardSpacing) {
-      HStack(alignment: .center, spacing: Layout.pointSpacing) {
+      HStack(alignment: .center, spacing: 10) {
         Image(systemName: "folder.fill.badge.gearshape")
           .font(AppTheme.Typography.captionStrong)
           .foregroundStyle(AppTheme.Colors.textPrimary)
@@ -137,121 +108,36 @@ struct ScanSetupView: View {
           )
       }
 
-      Text("Use this for fast, focused scans on Downloads, project directories, or any area you are actively cleaning.")
+      Text("Use folder scan for quick cleanup loops in Downloads, projects, and specific paths you are actively managing.")
         .font(AppTheme.Typography.body)
         .foregroundStyle(AppTheme.Colors.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
 
-      HStack(spacing: Layout.buttonRowSpacing) {
-        if hasSelectedFolder {
-          Button {
-            onChooseFolder()
-          } label: {
-            Label("Change Folder…", systemImage: "folder.badge.plus")
-          }
-          .buttonStyle(LunarSecondaryButtonStyle())
-          .keyboardShortcut("o", modifiers: [.command])
+      folderTargetPreview
+      folderActionRow
 
-          Button("Start Folder Scan") {
-            onStartFolderScan()
-          }
-          .buttonStyle(LunarPrimaryButtonStyle())
-          .disabled(!canStartFolderScan)
-          .keyboardShortcut(.defaultAction)
-        } else {
-          Button {
-            onChooseFolder()
-          } label: {
-            Label("Choose Folder…", systemImage: "folder.badge.plus")
-          }
-          .buttonStyle(LunarPrimaryButtonStyle())
-          .keyboardShortcut(.defaultAction)
-        }
+      Divider()
+        .overlay(AppTheme.Colors.divider)
 
-        Spacer(minLength: 0)
-      }
-
-      selectedFolderPathSlot
+      fullDiskActionBlock
+        .padding(.top, 2)
     }
     .lunarSetupCard(tone: .emphasis, padding: Layout.cardPadding)
   }
 
-  private var fullDiskCard: some View {
-    VStack(alignment: .leading, spacing: Layout.standardCardSpacing) {
-      HStack(spacing: 8) {
-        Image(systemName: "internaldrive.fill")
-          .font(AppTheme.Typography.captionStrong)
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-
-        Text("Full-Disk Scan")
-          .font(AppTheme.Typography.sectionHeader)
-          .foregroundStyle(AppTheme.Colors.textPrimary)
-      }
-
-      Text("Use when you need complete device-level breakdown. This usually takes longer than a folder scan.")
-        .font(AppTheme.Typography.caption)
+  private var folderTargetPreview: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      Text("Target")
+        .font(AppTheme.Typography.microStrong)
         .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      HStack(spacing: Layout.buttonRowSpacing) {
-        Button("Scan Macintosh HD") {
-          onScanMacintoshHD()
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-
-        Spacer(minLength: 0)
-      }
-    }
-    .lunarSetupCard(padding: Layout.cardPadding)
-  }
-
-  private var trustCard: some View {
-    VStack(alignment: .leading, spacing: Layout.primaryCardSpacing) {
-      Text("Permissions & Privacy")
-        .font(AppTheme.Typography.sectionHeader)
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text("LunarDisk reads metadata only. File contents are never uploaded or persisted.")
-        .font(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      VStack(alignment: .leading, spacing: Layout.pointSpacing) {
-        setupPoint("If access is denied, open Full Disk Access in macOS Settings.")
-        setupPoint("Enable LunarDisk and rerun the scan.")
-        setupPoint("Partial scans are flagged so results remain transparent.")
-      }
-
-      HStack(spacing: Layout.buttonRowSpacing) {
-        Button("Open Full Disk Access") {
-          onOpenFullDiskAccess()
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-
-        Spacer(minLength: 0)
-      }
-    }
-    .lunarSetupCard(padding: Layout.cardPadding)
-  }
-
-  private var selectedFolderPathSlot: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Group {
-        if let selectedFolderPath {
-          Text(selectedFolderPath)
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        } else {
-          Text("Choose a folder to enable Start Folder Scan")
-            .font(AppTheme.Typography.micro)
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-            .lineLimit(1)
-        }
-      }
 
       if let selectedFolderPath {
+        Text(selectedFolderPath)
+          .font(.system(size: 11, weight: .regular, design: .monospaced))
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+
         HStack(spacing: 8) {
           pathActionChip(
             title: "Copy Path",
@@ -273,20 +159,116 @@ struct ScanSetupView: View {
 
           Spacer(minLength: 0)
         }
+      } else {
+        Text("No folder selected. Choose a folder to enable scanning.")
+          .font(AppTheme.Typography.micro)
+          .foregroundStyle(AppTheme.Colors.textTertiary)
+          .lineLimit(2)
       }
     }
-    .padding(.horizontal, Layout.pathSlotHorizontalPadding)
-    .padding(.vertical, Layout.pathSlotVerticalPadding)
+    .padding(.horizontal, Layout.targetSlotHorizontalPadding)
+    .padding(.vertical, Layout.targetSlotVerticalPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: Layout.pathSlotCornerRadius, style: .continuous)
-        .fill(AppTheme.Colors.targetBannerBackground)
-        .overlay(
-          RoundedRectangle(cornerRadius: Layout.pathSlotCornerRadius, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
+    .background(targetPreviewBackground)
     .help(selectedFolderPath ?? "")
+  }
+
+  private var targetPreviewBackground: some View {
+    RoundedRectangle(cornerRadius: Layout.targetSlotCornerRadius, style: .continuous)
+      .fill(AppTheme.Colors.targetBannerBackground)
+      .overlay(
+        RoundedRectangle(cornerRadius: Layout.targetSlotCornerRadius, style: .continuous)
+          .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
+      )
+  }
+
+  private var folderActionRow: some View {
+    HStack(spacing: Layout.buttonRowSpacing) {
+      if hasSelectedFolder {
+        Button("Start Folder Scan") {
+          onStartFolderScan()
+        }
+        .buttonStyle(LunarPrimaryButtonStyle())
+        .disabled(!canStartFolderScan)
+        .keyboardShortcut(.defaultAction)
+
+        Button {
+          onChooseFolder()
+        } label: {
+          Label("Change Folder…", systemImage: "folder.badge.plus")
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+        .keyboardShortcut("o", modifiers: [.command])
+      } else {
+        Button {
+          onChooseFolder()
+        } label: {
+          Label("Choose Folder…", systemImage: "folder.badge.plus")
+        }
+        .buttonStyle(LunarPrimaryButtonStyle())
+        .keyboardShortcut(.defaultAction)
+      }
+
+      Spacer(minLength: 0)
+    }
+  }
+
+  private var fullDiskActionBlock: some View {
+    VStack(alignment: .leading, spacing: Layout.subsectionSpacing) {
+      HStack(alignment: .center, spacing: 8) {
+        Image(systemName: "internaldrive.fill")
+          .font(AppTheme.Typography.captionStrong)
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Text("Need Full Coverage?")
+          .font(AppTheme.Typography.sectionHeader)
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+      }
+
+      Text("Run a full-disk scan to include the whole device. This typically takes longer and may trigger permission prompts.")
+        .font(AppTheme.Typography.caption)
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      HStack(spacing: Layout.buttonRowSpacing) {
+        Button("Scan Macintosh HD") {
+          onScanMacintoshHD()
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+
+        Spacer(minLength: 0)
+      }
+    }
+  }
+
+  private var permissionsAndPrivacyCard: some View {
+    VStack(alignment: .leading, spacing: Layout.standardCardSpacing) {
+      Text("Permissions & Privacy")
+        .font(AppTheme.Typography.sectionHeader)
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+
+      Text("LunarDisk scans metadata only. File contents are never uploaded or persisted. If macOS blocks access, use Full Disk Access and rerun.")
+        .font(AppTheme.Typography.body)
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      VStack(alignment: .leading, spacing: Layout.pointSpacing) {
+        setupPoint("Reads names, paths, hierarchy, and byte sizes.")
+        setupPoint("Stores only minimal local state needed for app flow.")
+        setupPoint("Enable LunarDisk in Full Disk Access if a scan fails due to permissions.")
+        setupPoint("Partial scans are labeled so totals stay transparent.")
+      }
+
+      HStack(spacing: Layout.buttonRowSpacing) {
+        Button("Open Full Disk Access") {
+          onOpenFullDiskAccess()
+        }
+        .buttonStyle(LunarSecondaryButtonStyle())
+
+        Spacer(minLength: 0)
+      }
+    }
+    .lunarSetupCard(padding: Layout.cardPadding)
   }
 
   private func pathActionChip(
@@ -333,21 +315,21 @@ struct ScanSetupView: View {
   }
 
   private func animateEntranceIfNeeded() {
-    guard !revealHeader, !revealPrimaryCard, !revealSecondaryStack else { return }
+    guard !revealHeader, !revealPrimaryCard, !revealSupportCard else { return }
 
     if accessibilityReduceMotion {
       revealHeader = true
       revealPrimaryCard = true
-      revealSecondaryStack = true
+      revealSupportCard = true
       return
     }
 
     Task { @MainActor in
       revealHeader = true
-      try? await Task.sleep(nanoseconds: 90_000_000)
+      try? await Task.sleep(nanoseconds: 85_000_000)
       revealPrimaryCard = true
-      try? await Task.sleep(nanoseconds: 90_000_000)
-      revealSecondaryStack = true
+      try? await Task.sleep(nanoseconds: 85_000_000)
+      revealSupportCard = true
     }
   }
 
