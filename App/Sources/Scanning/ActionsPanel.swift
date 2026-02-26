@@ -608,22 +608,6 @@ private enum ActionRiskFilter: String, CaseIterable, Identifiable {
   }
 }
 
-private enum ActionSortMode: String, CaseIterable, Identifiable {
-  case impact
-  case safety
-
-  var id: String { rawValue }
-
-  var title: String {
-    switch self {
-    case .impact:
-      return "Impact"
-    case .safety:
-      return "Safety"
-    }
-  }
-}
-
 private struct TrashIntent: Identifiable {
   let id = UUID()
   let sourceLabel: String
@@ -631,6 +615,13 @@ private struct TrashIntent: Identifiable {
 }
 
 struct ActionsPanel: View {
+  private enum Layout {
+    static let pageSize = 6
+    static let queueRowHeight: CGFloat = 98
+    static let queueRowSpacing: CGFloat = 10
+    static let selectionToolbarSlotHeight: CGFloat = 58
+  }
+
   let rootNode: FileNode
   let warningMessage: String?
   let onRevealInFinder: (String) -> Void
@@ -644,7 +635,7 @@ struct ActionsPanel: View {
   @State private var isComputingSnapshot = false
   @State private var selectedCandidateIDs: Set<String> = []
   @State private var riskFilter: ActionRiskFilter = .all
-  @State private var sortMode: ActionSortMode = .impact
+  @State private var queuePageIndex = 0
   @State private var trashIntent: TrashIntent?
   @State private var lastReport: FileActionBatchReport?
 
@@ -656,13 +647,7 @@ struct ActionsPanel: View {
 
       if let snapshot {
         summarySection(snapshot)
-
-        if !snapshot.quickWins.isEmpty {
-          quickWinsSection(snapshot.quickWins)
-        }
-
         actionQueueSection(snapshot)
-        batchActionsSection(snapshot)
 
         if let lastReport {
           lastRunSection(lastReport)
@@ -672,14 +657,37 @@ struct ActionsPanel: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
-    .sheet(item: $trashIntent) { intent in
-      trashConfirmationSheet(intent)
+    .confirmationDialog(
+      "Confirm Move to Trash",
+      isPresented: trashConfirmationBinding,
+      presenting: trashIntent
+    ) { intent in
+      Button(role: .destructive) {
+        runTrash(intent)
+        trashIntent = nil
+      } label: {
+        Text(
+          intent.candidates.count == 1
+            ? "Move Item to Trash"
+            : "Move \(intent.candidates.count) Items to Trash"
+        )
+      }
+
+      Button("Cancel", role: .cancel) {
+        trashIntent = nil
+      }
+    } message: { intent in
+      Text(trashConfirmationMessage(for: intent))
     }
+    .dialogIcon(Image(nsImage: NSApplication.shared.applicationIconImage))
     .onAppear {
       hydrateOrRefreshSnapshot(force: false)
     }
     .onChange(of: cacheKey) { _, _ in
       hydrateOrRefreshSnapshot(force: true)
+    }
+    .onChange(of: riskFilter) { _, _ in
+      queuePageIndex = 0
     }
     .onDisappear {
       snapshotTask?.cancel()
@@ -789,29 +797,14 @@ struct ActionsPanel: View {
     )
   }
 
-  private func quickWinsSection(_ quickWins: [ScanActionsSnapshot.Candidate]) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Quick Wins")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      Text("High-confidence opportunities with lower risk.")
-        .font(.system(size: 11, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textTertiary)
-
-      VStack(alignment: .leading, spacing: 10) {
-        ForEach(quickWins) { candidate in
-          actionCandidateRow(candidate, showSelection: false)
-        }
-      }
-    }
-    .padding(16)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .lunarPanelBackground()
-  }
-
   private func actionQueueSection(_ snapshot: ScanActionsSnapshot) -> some View {
     let visibleCandidates = filteredCandidates(from: snapshot)
+    let selected = snapshot.selectedCandidates(ids: selectedCandidateIDs)
+    let selectedBytes = snapshot.estimatedBytes(for: selectedCandidateIDs)
+    let quickWinIDs = Set(snapshot.quickWins.map(\.id))
+    let safePageIndex = clampedPageIndex(totalCount: visibleCandidates.count)
+    let pageItems = pagedCandidates(from: visibleCandidates, pageIndex: safePageIndex)
+    let pageCount = totalPageCount(totalCount: visibleCandidates.count)
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -839,34 +832,49 @@ struct ActionsPanel: View {
           horizontalPadding: 10,
           verticalPadding: 6
         )
-
-        LunarSegmentedControl(
-          options: [
-            LunarSegmentedControlOption(ActionSortMode.impact.title, value: ActionSortMode.impact),
-            LunarSegmentedControlOption(ActionSortMode.safety.title, value: ActionSortMode.safety)
-          ],
-          selection: $sortMode,
-          minItemWidth: 66,
-          horizontalPadding: 10,
-          verticalPadding: 6
-        )
-        .frame(width: 168)
       }
 
       if visibleCandidates.isEmpty {
-        Text("No actions match this filter.")
-          .font(.system(size: 12, weight: .regular))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
+        emptyQueueState
       } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 10) {
-            ForEach(visibleCandidates) { candidate in
-              actionCandidateRow(candidate, showSelection: true)
-            }
+        selectionToolbarSlot(
+          selectedCount: selected.count,
+          selectedBytes: selectedBytes,
+          selectedCandidates: selected
+        )
+
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(pageItems) { candidate in
+            actionCandidateRow(
+              candidate,
+              showSelection: true,
+              isQuickWin: quickWinIDs.contains(candidate.id)
+            )
           }
-          .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 380, alignment: .topLeading)
+        .frame(
+          maxWidth: .infinity,
+          minHeight: queueViewportHeight,
+          alignment: .topLeading
+        )
+
+        HStack(spacing: 10) {
+          Button("Previous") {
+            guard queuePageIndex > 0 else { return }
+            queuePageIndex -= 1
+          }
+          .buttonStyle(LunarSecondaryButtonStyle())
+          .disabled(queuePageIndex == 0)
+
+          Spacer(minLength: 8)
+
+          Button("Next") {
+            guard queuePageIndex < pageCount - 1 else { return }
+            queuePageIndex += 1
+          }
+          .buttonStyle(LunarSecondaryButtonStyle())
+          .disabled(queuePageIndex >= pageCount - 1)
+        }
       }
     }
     .padding(16)
@@ -874,7 +882,111 @@ struct ActionsPanel: View {
     .lunarPanelBackground()
   }
 
-  private func actionCandidateRow(_ candidate: ScanActionsSnapshot.Candidate, showSelection: Bool) -> some View {
+  private func selectionToolbarSlot(
+    selectedCount: Int,
+    selectedBytes: Int64,
+    selectedCandidates: [ScanActionsSnapshot.Candidate]
+  ) -> some View {
+    Group {
+      if selectedCandidates.isEmpty {
+        Text("Select actions to enable bulk operations.")
+          .font(.system(size: 11, weight: .regular))
+          .foregroundStyle(AppTheme.Colors.textTertiary)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 9)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+              .fill(AppTheme.Colors.surfaceElevated.opacity(0.22))
+              .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                  .stroke(AppTheme.Colors.cardBorder.opacity(0.7), lineWidth: 1)
+              )
+          )
+      } else {
+        integratedBatchToolbar(
+          selectedCount: selectedCount,
+          selectedBytes: selectedBytes,
+          selectedCandidates: selectedCandidates
+        )
+      }
+    }
+    .frame(maxWidth: .infinity, minHeight: Layout.selectionToolbarSlotHeight, alignment: .topLeading)
+  }
+
+  private func integratedBatchToolbar(
+    selectedCount: Int,
+    selectedBytes: Int64,
+    selectedCandidates: [ScanActionsSnapshot.Candidate]
+  ) -> some View {
+    HStack(spacing: 10) {
+      summaryChip(systemImage: "checkmark.circle", text: "\(selectedCount) selected")
+      summaryChip(systemImage: "arrow.down.circle", text: ByteFormatter.string(from: selectedBytes))
+
+      Spacer(minLength: 8)
+
+      Button {
+        trashIntent = TrashIntent(sourceLabel: "Selection", candidates: selectedCandidates)
+      } label: {
+        Label("Move to Trash", systemImage: "trash.fill")
+      }
+      .buttonStyle(LunarDestructiveButtonStyle())
+
+      Button("Clear") {
+        selectedCandidateIDs.removeAll()
+      }
+      .buttonStyle(LunarSecondaryButtonStyle())
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 9)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.5))
+        .overlay(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
+        )
+    )
+  }
+
+  private func totalPageCount(totalCount: Int) -> Int {
+    guard totalCount > 0 else { return 1 }
+    let pageSize = Layout.pageSize
+    return (totalCount + pageSize - 1) / pageSize
+  }
+
+  private var queueViewportHeight: CGFloat {
+    CGFloat(Layout.pageSize) * Layout.queueRowHeight
+      + CGFloat(Layout.pageSize - 1) * Layout.queueRowSpacing
+  }
+
+  private func clampedPageIndex(totalCount: Int) -> Int {
+    let pageCount = totalPageCount(totalCount: totalCount)
+    return min(max(queuePageIndex, 0), max(pageCount - 1, 0))
+  }
+
+  private func pageStartIndex(pageIndex: Int) -> Int {
+    pageIndex * Layout.pageSize
+  }
+
+  private func pagedCandidates(
+    from candidates: [ScanActionsSnapshot.Candidate],
+    pageIndex: Int
+  ) -> [ScanActionsSnapshot.Candidate] {
+    guard !candidates.isEmpty else { return [] }
+
+    let startIndex = pageStartIndex(pageIndex: pageIndex)
+    guard startIndex < candidates.count else { return [] }
+
+    let endIndex = min(startIndex + Layout.pageSize, candidates.count)
+    return Array(candidates[startIndex ..< endIndex])
+  }
+
+  private func actionCandidateRow(
+    _ candidate: ScanActionsSnapshot.Candidate,
+    showSelection: Bool,
+    isQuickWin: Bool
+  ) -> some View {
     let isSelected = selectedCandidateIDs.contains(candidate.id)
 
     return HStack(alignment: .top, spacing: 10) {
@@ -897,6 +1009,10 @@ struct ActionsPanel: View {
           Text(candidate.title)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textSecondary)
+
+          if isQuickWin {
+            quickWinBadge
+          }
 
           riskBadge(candidate.risk)
 
@@ -928,7 +1044,7 @@ struct ActionsPanel: View {
         Text(candidate.guidance)
           .font(.system(size: 11, weight: .regular))
           .foregroundStyle(AppTheme.Colors.textSecondary)
-          .fixedSize(horizontal: false, vertical: true)
+          .lineLimit(2)
       }
 
       Spacer(minLength: 8)
@@ -974,52 +1090,54 @@ struct ActionsPanel: View {
     )
   }
 
-  private func batchActionsSection(_ snapshot: ScanActionsSnapshot) -> some View {
-    let selected = snapshot.selectedCandidates(ids: selectedCandidateIDs)
-    let selectedBytes = snapshot.estimatedBytes(for: selectedCandidateIDs)
+  private var quickWinBadge: some View {
+    Text("QUICK WIN")
+      .font(.system(size: 10, weight: .bold))
+      .foregroundStyle(AppTheme.Colors.statusSuccessForeground)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 3)
+      .background(
+        Capsule(style: .continuous)
+          .fill(AppTheme.Colors.statusSuccessBackground)
+          .overlay(
+            Capsule(style: .continuous)
+              .stroke(AppTheme.Colors.statusSuccessBorder, lineWidth: 1)
+          )
+      )
+  }
 
-    return VStack(alignment: .leading, spacing: 12) {
-      Text("Batch Actions")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
+  private var emptyQueueState: some View {
+    VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 8) {
-        summaryChip(systemImage: "checkmark.circle", text: "\(selected.count) selected")
-        summaryChip(systemImage: "arrow.down.circle", text: ByteFormatter.string(from: selectedBytes))
+        Image(systemName: "line.3.horizontal.decrease.circle")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+        Text("No Actions Match This Filter")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
       }
 
-      HStack(spacing: 10) {
-        Button {
-          trashIntent = TrashIntent(sourceLabel: "Batch", candidates: selected)
-        } label: {
-          Label("Move Selected to Trash", systemImage: "trash.fill")
-        }
-        .buttonStyle(LunarDestructiveButtonStyle())
-        .disabled(selected.isEmpty)
+      Text("Try broadening the filter to see all suggested cleanup actions.")
+        .font(.system(size: 11, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
 
-        Button("Reveal Selected") {
-          let report = FileActionService.reveal(paths: selected.map { $0.node.path })
-          handleBatchReport(report)
+      if riskFilter != .all {
+        Button("Show All Actions") {
+          riskFilter = .all
         }
         .buttonStyle(LunarSecondaryButtonStyle())
-        .disabled(selected.isEmpty)
-
-        Button("Clear Selection") {
-          selectedCandidateIDs.removeAll()
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-        .disabled(selected.isEmpty)
-      }
-
-      if selected.isEmpty {
-        Text("Select one or more actions from the queue above to enable batch operations.")
-          .font(.system(size: 11, weight: .regular))
-          .foregroundStyle(AppTheme.Colors.textTertiary)
       }
     }
-    .padding(16)
+    .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .lunarPanelBackground()
+    .background(
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.32))
+        .overlay(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
+        )
+    )
   }
 
   private func lastRunSection(_ report: FileActionBatchReport) -> some View {
@@ -1085,9 +1203,9 @@ struct ActionsPanel: View {
       )
     case .review:
       style = (
-        AppTheme.Colors.textSecondary,
-        AppTheme.Colors.surfaceElevated.opacity(0.75),
-        AppTheme.Colors.cardBorder
+        AppTheme.Colors.chart1,
+        AppTheme.Colors.chart1.opacity(0.16),
+        AppTheme.Colors.chart1.opacity(0.42)
       )
     case .caution:
       style = (
@@ -1175,7 +1293,18 @@ struct ActionsPanel: View {
     )
   }
 
-  private func trashConfirmationSheet(_ intent: TrashIntent) -> some View {
+  private var trashConfirmationBinding: Binding<Bool> {
+    Binding(
+      get: { trashIntent != nil },
+      set: { shouldPresent in
+        if !shouldPresent {
+          trashIntent = nil
+        }
+      }
+    )
+  }
+
+  private func trashConfirmationMessage(for intent: TrashIntent) -> String {
     let candidateIDs = Set(intent.candidates.map(\.id))
     let estimatedBytes: Int64
 
@@ -1187,78 +1316,18 @@ struct ActionsPanel: View {
       }
     }
 
-    let cautionItems = intent.candidates.filter { $0.risk == .caution }
+    let cautionCount = intent.candidates.filter { $0.risk == .caution }.count
+    var parts: [String] = [
+      "\(intent.sourceLabel): \(intent.candidates.count) item\(intent.candidates.count == 1 ? "" : "s").",
+      "Estimated reclaim: \(ByteFormatter.string(from: estimatedBytes))."
+    ]
 
-    return VStack(alignment: .leading, spacing: 14) {
-      Text("Confirm Move to Trash")
-        .font(.system(size: 22, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textPrimary)
-
-      Text("\(intent.sourceLabel): \(intent.candidates.count) item\(intent.candidates.count == 1 ? "" : "s")")
-        .font(.system(size: 13, weight: .regular))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-      HStack(spacing: 8) {
-        summaryChip(systemImage: "trash.fill", text: "\(intent.candidates.count) items")
-        summaryChip(systemImage: "arrow.down.circle", text: ByteFormatter.string(from: estimatedBytes))
-      }
-
-      if !cautionItems.isEmpty {
-        Text("Includes \(cautionItems.count) CAUTION item\(cautionItems.count == 1 ? "" : "s"). Review paths carefully before continuing.")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.statusWarningForeground)
-      }
-
-      VStack(alignment: .leading, spacing: 6) {
-        ForEach(intent.candidates.prefix(8)) { candidate in
-          Text("• \(candidate.node.path)")
-            .font(.system(size: 11, weight: .regular))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-            .lineLimit(1)
-        }
-
-        if intent.candidates.count > 8 {
-          Text("+\(intent.candidates.count - 8) more")
-            .font(.system(size: 11, weight: .regular))
-            .foregroundStyle(AppTheme.Colors.textTertiary)
-        }
-      }
-      .padding(10)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(AppTheme.Colors.surfaceElevated.opacity(0.45))
-          .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-              .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
-          )
-      )
-
-      HStack(spacing: 10) {
-        Button {
-          runTrash(intent)
-          trashIntent = nil
-        } label: {
-          Label("Move to Trash", systemImage: "trash.fill")
-        }
-        .buttonStyle(LunarDestructiveButtonStyle())
-
-        Button("Cancel") {
-          trashIntent = nil
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-      }
+    if cautionCount > 0 {
+      parts.append("Includes \(cautionCount) caution item\(cautionCount == 1 ? "" : "s").")
     }
-    .padding(22)
-    .frame(width: 680)
-    .background(
-      RoundedRectangle(cornerRadius: 16, style: .continuous)
-        .fill(AppTheme.Colors.surface)
-        .overlay(
-          RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-        )
-    )
+
+    parts.append("Review before proceeding.")
+    return parts.joined(separator: " ")
   }
 
   private func hydrateOrRefreshSnapshot(force: Bool) {
@@ -1282,6 +1351,7 @@ struct ActionsPanel: View {
     isComputingSnapshot = true
     lastReport = nil
     selectedCandidateIDs.removeAll()
+    queuePageIndex = 0
 
     snapshotTask = Task.detached(priority: .utility) {
       let computed = ScanActionsSnapshot(rootNode: rootSnapshot)
@@ -1297,6 +1367,7 @@ struct ActionsPanel: View {
   }
 
   private func filteredCandidates(from snapshot: ScanActionsSnapshot) -> [ScanActionsSnapshot.Candidate] {
+    let quickWinIDs = Set(snapshot.quickWins.map(\.id))
     let filtered = snapshot.candidates.filter { candidate in
       switch riskFilter {
       case .all:
@@ -1311,21 +1382,19 @@ struct ActionsPanel: View {
     }
 
     return filtered.sorted { lhs, rhs in
-      switch sortMode {
-      case .impact:
-        if lhs.estimatedReclaimBytes != rhs.estimatedReclaimBytes {
-          return lhs.estimatedReclaimBytes > rhs.estimatedReclaimBytes
-        }
-        return lhs.node.path < rhs.node.path
-      case .safety:
-        if lhs.risk.rawValue != rhs.risk.rawValue {
-          return lhs.risk.rawValue < rhs.risk.rawValue
-        }
-        if lhs.estimatedReclaimBytes != rhs.estimatedReclaimBytes {
-          return lhs.estimatedReclaimBytes > rhs.estimatedReclaimBytes
-        }
-        return lhs.node.path < rhs.node.path
+      let lhsQuickWin = quickWinIDs.contains(lhs.id)
+      let rhsQuickWin = quickWinIDs.contains(rhs.id)
+
+      if lhsQuickWin != rhsQuickWin {
+        return lhsQuickWin
       }
+      if lhs.estimatedReclaimBytes != rhs.estimatedReclaimBytes {
+        return lhs.estimatedReclaimBytes > rhs.estimatedReclaimBytes
+      }
+      if lhs.risk.rawValue != rhs.risk.rawValue {
+        return lhs.risk.rawValue < rhs.risk.rawValue
+      }
+      return lhs.node.path < rhs.node.path
     }
   }
 
@@ -1355,12 +1424,18 @@ struct ActionsPanel: View {
         return result.path
       }
     )
+    let succeededCandidateIDs = Set(
+      intent.candidates.compactMap { candidate in
+        succeededPaths.contains(candidate.node.path) ? candidate.id : nil
+      }
+    )
 
     if !succeededPaths.isEmpty, var snapshot {
       snapshot.removeCandidates(withPaths: succeededPaths)
       self.snapshot = snapshot
       onSnapshotReady(snapshot)
-      selectedCandidateIDs.subtract(succeededPaths)
+      selectedCandidateIDs.subtract(succeededCandidateIDs)
+      queuePageIndex = clampedPageIndex(totalCount: filteredCandidates(from: snapshot).count)
     }
   }
 
