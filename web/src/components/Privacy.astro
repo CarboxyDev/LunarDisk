@@ -1,0 +1,90 @@
+---
+const PROMISES = [
+  {
+    title: 'No cloud, ever',
+    description:
+      'All scanning runs locally on your Mac. Your file names and sizes never leave your device.',
+    icon: 'drive',
+  },
+  {
+    title: 'No network requests',
+    description:
+      'LunarDisk makes zero network requests during or after a scan. There are no servers involved.',
+    icon: 'wifi-off',
+  },
+  {
+    title: 'No file content reading',
+    description:
+      'Only metadata (names, sizes, dates) is accessed. Your actual file contents are never read or touched.',
+    icon: 'eye-off',
+  },
+] as const;
+---
+
+<section id="privacy" class="px-6 py-20 md:py-28">
+  <div class="mx-auto max-w-6xl">
+
+    <!-- Section header -->
+    <div class="mb-14 text-center">
+      <h2
+        data-animate
+        class="mb-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"
+      >
+        Privacy isn't a feature — it's the foundation
+      </h2>
+      <p data-animate data-delay="1" class="mx-auto max-w-2xl text-lg text-muted-foreground">
+        LunarDisk was built with a local-first, least-privilege approach from day one.
+      </p>
+    </div>
+
+    <!-- Privacy cards -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      {PROMISES.map((promise, i) => (
+        <div
+          data-animate
+          data-delay={String(i + 1)}
+          class="rounded-xl border border-border bg-card p-6"
+        >
+          <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            {promise.icon === 'drive' && (
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+              </svg>
+            )}
+            {promise.icon === 'wifi-off' && (
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072M12 12a3 3 0 00-3 3m3-3l-1.5-1.5M3 3l18 18" />
+              </svg>
+            )}
+            {promise.icon === 'eye-off' && (
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+              </svg>
+            )}
+          </div>
+          <h3 class="mb-2 text-base font-semibold text-foreground">{promise.title}</h3>
+          <p class="text-sm leading-relaxed text-muted-foreground">{promise.description}</p>
+        </div>
+      ))}
+    </div>
+
+    <!-- Source link -->
+    <div data-animate class="mt-8 flex items-center justify-center gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+      </svg>
+      <p class="text-sm text-muted-foreground">
+        Don't take our word for it —{' '}
+        <a
+          href="https://github.com/CarboxyDev/Lunardisk"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+        >
+          read the source on GitHub
+        </a>
+      </p>
+    </div>
+
+  </div>
+</section>
