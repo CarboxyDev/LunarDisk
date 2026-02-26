@@ -1,17 +1,19 @@
 # LunarDisk
 
+<p align="center">
+  <img src="assets/brand/lunardisk-icon.png" alt="LunarDisk icon" width="140" />
+</p>
+
 LunarDisk is a macOS-only, open-source disk usage visualizer focused on helping users find and clean large storage consumers safely.
 
-## Product Summary
+## About This Project
 
-- Goal: quickly surface storage-heavy files/folders and let users clean up safely.
-- Users: Mac users low on space, plus developers/power users needing trusted breakdowns.
-- Core flow: pick folder/volume -> recursive scan -> visual + sortable size breakdown -> drill down/rescan.
-- Privacy: local-first, least-privilege filesystem access, no file-content collection/transmission, minimal settings/scan metadata only.
+LunarDisk helps macOS users understand what is taking space on their machine and act on it safely.
 
-## Architecture
-
-- `App/` (SwiftUI app orchestration), `Modules/CoreScan/` (scanner + size model), `Modules/Visualization/` (chart/layout), `Modules/LunardiskAI/` (local heuristics), `scripts/` (CLI workflow).
+- Built for: anyone running low on disk space, especially users who want a clear visual breakdown before deleting anything.
+- How it works: choose a folder or volume, run a recursive scan, inspect the size breakdown, then drill into large directories and files.
+- Open-source focus: readable Swift/SwiftUI architecture, modular scanning and visualization layers, and contributor-friendly scripts.
+- Privacy model: local-first with least-privilege file access; no file-content collection or transmission.
 
 ## Install
 
@@ -19,9 +21,11 @@ LunarDisk is a macOS-only, open-source disk usage visualizer focused on helping 
 
 ## Workflow
 
-- Prereq: install Xcode command-line tools and XcodeGen (`brew install xcodegen`).
-- Commands: `./scripts/gen.sh`, `./scripts/build.sh`, `./scripts/test.sh`, `./scripts/run.sh`, `./scripts/release-dmg.sh`, `./scripts/reset-state.sh [onboarding|all]`, `./scripts/clean.sh`.
-- `Lunardisk.xcodeproj` is generated from `project.yml` and can be recreated anytime.
+- Prereq: Xcode command-line tools + XcodeGen (`brew install xcodegen`).
+- Generate project: `./scripts/gen.sh`
+- Build: `./scripts/build.sh`
+- Test: `./scripts/test.sh`
+- Run: `./scripts/run.sh`
 
 ## Product Preview
 
