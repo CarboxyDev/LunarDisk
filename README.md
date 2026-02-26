@@ -16,7 +16,7 @@ LunarDisk is a macOS-only, open-source disk usage visualizer focused on helping 
 ## Workflow
 
 - Prereq: install Xcode command-line tools and XcodeGen (`brew install xcodegen`).
-- Commands: `./scripts/gen.sh`, `./scripts/build.sh`, `./scripts/test.sh`, `./scripts/run.sh`, `./scripts/reset-state.sh [onboarding|all]`, `./scripts/clean.sh`.
+- Commands: `./scripts/gen.sh`, `./scripts/build.sh`, `./scripts/test.sh`, `./scripts/run.sh`, `./scripts/release-dmg.sh`, `./scripts/reset-state.sh [onboarding|all]`, `./scripts/clean.sh`.
 - `Lunardisk.xcodeproj` is generated from `project.yml` and can be recreated anytime.
 
 ## Product Preview

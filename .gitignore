@@ -3,3 +3,4 @@
 .derived/
 .swiftpm/
 Lunardisk.xcodeproj/
+dist/
