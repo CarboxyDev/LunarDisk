@@ -1,11 +1,11 @@
 ---
-import { LayoutDashboard, FolderTree, Trash2, BarChart2, ShieldCheck, CodeXml } from '@lucide/astro';
+import { ChartPie, FolderTree, ZoomIn, ShieldCheck, CodeXml, ChartColumnBig } from '@lucide/astro';
 
 const FEATURES = [
   {
     title: 'Visual disk map',
     description:
-      'See your storage as an interactive treemap. Spot large directories and files at a glance without reading any numbers.',
+      'See your storage as an interactive radial chart. Spot large directories and files at a glance.',
     icon: 'chart',
   },
   {
@@ -15,10 +15,10 @@ const FEATURES = [
     icon: 'folder',
   },
   {
-    title: 'Safe cleanup',
+    title: 'Drill-down navigation',
     description:
-      'Review exactly what you\'re about to delete before acting. Drill into large items and decide with full context.',
-    icon: 'trash',
+      'Click any segment to zoom into that directory. Navigate deep into your folders to understand them better.',
+    icon: 'zoom',
   },
   {
     title: 'File type breakdown',
@@ -35,7 +35,7 @@ const FEATURES = [
   {
     title: 'Fully open source',
     description:
-      'The entire codebase is on GitHub. Inspect it, fork it, and contribute freely. Trust through transparency.',
+      'The entire codebase is on GitHub. Inspect it, fork it, and contribute freely.',
     icon: 'code',
   },
 ] as const;
@@ -64,10 +64,10 @@ const FEATURES = [
           class="group rounded-xl border border-border bg-card p-6 transition-shadow duration-200 hover:shadow-md"
         >
           <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            {feature.icon === 'chart' && <LayoutDashboard class="h-5 w-5" />}
+            {feature.icon === 'chart' && <ChartPie class="h-5 w-5" />}
             {feature.icon === 'folder' && <FolderTree class="h-5 w-5" />}
-            {feature.icon === 'trash' && <Trash2 class="h-5 w-5" />}
-            {feature.icon === 'bar' && <BarChart2 class="h-5 w-5" />}
+            {feature.icon === 'zoom' && <ZoomIn class="h-5 w-5" />}
+            {feature.icon === 'bar' && <ChartColumnBig class="h-5 w-5" />}
             {feature.icon === 'shield' && <ShieldCheck class="h-5 w-5" />}
             {feature.icon === 'code' && <CodeXml class="h-5 w-5" />}
           </div>
