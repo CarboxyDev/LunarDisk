@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct ScanSetupView: View {
@@ -10,10 +9,9 @@ struct ScanSetupView: View {
     static let standardCardSpacing: CGFloat = 12
     static let subsectionSpacing: CGFloat = 8
     static let buttonRowSpacing: CGFloat = 10
+    static let actionTopSpacing: CGFloat = 10
     static let pointSpacing: CGFloat = 9
-    static let targetSlotHorizontalPadding: CGFloat = 12
-    static let targetSlotVerticalPadding: CGFloat = 10
-    static let targetSlotCornerRadius: CGFloat = 10
+    static let targetRowMaxWidth: CGFloat = 560
     static let entranceOffsetHeader: CGFloat = 14
     static let entranceOffsetCard: CGFloat = 12
   }
@@ -25,7 +23,6 @@ struct ScanSetupView: View {
   let onChooseFolder: () -> Void
   let onStartFolderScan: () -> Void
   let onOpenFullDiskAccess: () -> Void
-  let onRevealInFinder: (String) -> Void
 
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
   @State private var revealHeader = false
@@ -96,16 +93,6 @@ struct ScanSetupView: View {
         Text("Folder Scan")
           .font(AppTheme.Typography.cardHeader)
           .foregroundStyle(AppTheme.Colors.textPrimary)
-
-        Text("Recommended")
-          .font(AppTheme.Typography.microStrong)
-          .foregroundStyle(AppTheme.Colors.accentForeground)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(
-            Capsule(style: .continuous)
-              .fill(AppTheme.Colors.accent)
-          )
       }
 
       Text("Use folder scan for quick cleanup loops in Downloads, projects, and specific paths you are actively managing.")
@@ -126,88 +113,43 @@ struct ScanSetupView: View {
   }
 
   private var folderTargetPreview: some View {
-    VStack(alignment: .leading, spacing: 9) {
+    VStack(alignment: .leading, spacing: 7) {
       Text("Target")
         .font(AppTheme.Typography.microStrong)
         .foregroundStyle(AppTheme.Colors.textSecondary)
 
-      if let selectedFolderPath {
-        Text(selectedFolderPath)
+      HStack(spacing: 8) {
+        Image(systemName: hasSelectedFolder ? "folder.fill" : "folder")
+          .font(AppTheme.Typography.captionStrong)
+          .foregroundStyle(hasSelectedFolder ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+
+        Text(selectedFolderPath ?? "No folder selected.")
           .font(.system(size: 11, weight: .regular, design: .monospaced))
-          .foregroundStyle(AppTheme.Colors.textPrimary)
+          .foregroundStyle(hasSelectedFolder ? AppTheme.Colors.textPrimary : AppTheme.Colors.textTertiary)
           .lineLimit(1)
           .truncationMode(.middle)
-
-        HStack(spacing: 8) {
-          pathActionChip(
-            title: "Copy Path",
-            systemImage: "doc.on.doc",
-            action: { copyToPasteboard(selectedFolderPath) }
-          )
-          .keyboardShortcut("c", modifiers: [.command, .shift])
-          .help("Copy selected folder path (⌘⇧C)")
-          .accessibilityHint("Copies the selected folder path to the clipboard.")
-
-          pathActionChip(
-            title: "Reveal",
-            systemImage: "folder",
-            action: { onRevealInFinder(selectedFolderPath) }
-          )
-          .keyboardShortcut("r", modifiers: [.command, .shift])
-          .help("Reveal selected folder in Finder (⌘⇧R)")
-          .accessibilityHint("Opens Finder with the selected folder highlighted.")
-
-          Spacer(minLength: 0)
-        }
-      } else {
-        Text("No folder selected. Choose a folder to enable scanning.")
-          .font(AppTheme.Typography.micro)
-          .foregroundStyle(AppTheme.Colors.textTertiary)
-          .lineLimit(2)
       }
     }
-    .padding(.horizontal, Layout.targetSlotHorizontalPadding)
-    .padding(.vertical, Layout.targetSlotVerticalPadding)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(targetPreviewBackground)
-    .help(selectedFolderPath ?? "")
-  }
-
-  private var targetPreviewBackground: some View {
-    RoundedRectangle(cornerRadius: Layout.targetSlotCornerRadius, style: .continuous)
-      .fill(AppTheme.Colors.targetBannerBackground)
-      .overlay(
-        RoundedRectangle(cornerRadius: Layout.targetSlotCornerRadius, style: .continuous)
-          .stroke(AppTheme.Colors.cardBorder, lineWidth: AppTheme.Metrics.cardBorderWidth)
-      )
+    .frame(maxWidth: Layout.targetRowMaxWidth, alignment: .leading)
+    .help(selectedFolderPath ?? "No folder selected.")
   }
 
   private var folderActionRow: some View {
     HStack(spacing: Layout.buttonRowSpacing) {
-      if hasSelectedFolder {
-        Button("Start Folder Scan") {
-          onStartFolderScan()
-        }
-        .buttonStyle(LunarPrimaryButtonStyle())
-        .disabled(!canStartFolderScan)
-        .keyboardShortcut(.defaultAction)
-
-        Button {
-          onChooseFolder()
-        } label: {
-          Label("Change Folder…", systemImage: "folder.badge.plus")
-        }
-        .buttonStyle(LunarSecondaryButtonStyle())
-        .keyboardShortcut("o", modifiers: [.command])
-      } else {
-        Button {
-          onChooseFolder()
-        } label: {
-          Label("Choose Folder…", systemImage: "folder.badge.plus")
-        }
-        .buttonStyle(LunarPrimaryButtonStyle())
-        .keyboardShortcut(.defaultAction)
+      Button("Start Folder Scan") {
+        onStartFolderScan()
       }
+      .buttonStyle(LunarPrimaryButtonStyle())
+      .disabled(!canStartFolderScan || !hasSelectedFolder)
+      .keyboardShortcut(.defaultAction)
+
+      Button {
+        onChooseFolder()
+      } label: {
+        Label(hasSelectedFolder ? "Change Folder…" : "Choose Folder…", systemImage: "folder.badge.plus")
+      }
+      .buttonStyle(LunarSecondaryButtonStyle())
+      .keyboardShortcut("o", modifiers: [.command])
 
       Spacer(minLength: 0)
     }
@@ -238,6 +180,7 @@ struct ScanSetupView: View {
 
         Spacer(minLength: 0)
       }
+      .padding(.top, Layout.actionTopSpacing)
     }
   }
 
@@ -267,37 +210,9 @@ struct ScanSetupView: View {
 
         Spacer(minLength: 0)
       }
+      .padding(.top, Layout.actionTopSpacing)
     }
     .lunarSetupCard(padding: Layout.cardPadding)
-  }
-
-  private func pathActionChip(
-    title: String,
-    systemImage: String,
-    action: @escaping () -> Void
-  ) -> some View {
-    Button(action: action) {
-      Label(title, systemImage: systemImage)
-        .font(AppTheme.Typography.microStrong)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .lineLimit(1)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-          Capsule(style: .continuous)
-            .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
-            .overlay(
-              Capsule(style: .continuous)
-                .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
-            )
-        )
-    }
-    .buttonStyle(.plain)
-  }
-
-  private func copyToPasteboard(_ path: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(path, forType: .string)
   }
 
   private func setupPoint(_ text: String) -> some View {
