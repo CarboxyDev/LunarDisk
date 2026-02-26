@@ -13,6 +13,10 @@ LunarDisk is a macOS-only, open-source disk usage visualizer focused on helping 
 
 - `App/` (SwiftUI app orchestration), `Modules/CoreScan/` (scanner + size model), `Modules/Visualization/` (chart/layout), `Modules/LunardiskAI/` (local heuristics), `scripts/` (CLI workflow).
 
+## Install
+
+- Latest release: [GitHub Releases](https://github.com/CarboxyDev/Lunardisk/releases)
+
 ## Workflow
 
 - Prereq: install Xcode command-line tools and XcodeGen (`brew install xcodegen`).
