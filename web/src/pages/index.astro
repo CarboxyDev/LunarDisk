@@ -1,0 +1,52 @@
+---
+import '../styles/global.css';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content="LunarDisk — a macOS disk usage visualizer. Find and clean large storage consumers safely." />
+    <title>LunarDisk</title>
+  </head>
+  <body class="min-h-screen font-sans antialiased">
+
+    <!-- Nav -->
+    <header class="flex items-center justify-between px-8 py-5 max-w-5xl mx-auto">
+      <span class="text-foreground font-semibold tracking-tight">LunarDisk</span>
+      <a
+        href="https://github.com/CarboxyDev/Lunardisk/releases"
+        class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Download
+      </a>
+    </header>
+
+    <!-- Hero -->
+    <main class="flex flex-col items-center text-center px-6 pt-24 pb-32 max-w-3xl mx-auto">
+      <h1 class="text-5xl font-bold tracking-tight text-foreground leading-tight">
+        Know your disk.<br />Clean it safely.
+      </h1>
+      <p class="mt-6 text-lg text-muted-foreground max-w-xl">
+        LunarDisk is an open-source macOS disk usage visualizer. Scan any folder or volume, see exactly what's taking space, and act on it — without guessing.
+      </p>
+      <div class="mt-10 flex gap-4">
+        <a
+          href="https://github.com/CarboxyDev/Lunardisk/releases"
+          class="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+        >
+          Download for Mac
+        </a>
+        <a
+          href="https://github.com/CarboxyDev/Lunardisk"
+          class="px-5 py-2.5 rounded-lg border border-border text-foreground text-sm font-medium hover:bg-muted transition-colors"
+        >
+          View on GitHub
+        </a>
+      </div>
+    </main>
+
+  </body>
+</html>
