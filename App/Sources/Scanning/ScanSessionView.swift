@@ -86,6 +86,8 @@ struct ScanSessionView: View {
     static let chartPreferredHeightTwoColumn: CGFloat = 320
     static let chartMinHeight: CGFloat = 260
     static let chartMaxHeight: CGFloat = 620
+    static let breadcrumbChipMaxWidth: CGFloat = 220
+    static let targetBadgeMaxWidth: CGFloat = 540
   }
 
   let selectedURL: URL?
@@ -233,20 +235,7 @@ struct ScanSessionView: View {
       }
 
       HStack(spacing: 10) {
-        Label(targetLabel, systemImage: "scope")
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
-          .lineLimit(1)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 6)
-          .background(
-            Capsule(style: .continuous)
-              .fill(AppTheme.Colors.statusIdleBackground)
-              .overlay(
-                Capsule(style: .continuous)
-                  .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
-              )
-          )
+        targetBadge
 
         Spacer(minLength: 0)
 
@@ -357,14 +346,48 @@ struct ScanSessionView: View {
     }
   }
 
-  private var targetLabel: String {
+  private var targetDisplayPath: String {
     guard let selectedURL else {
       return "No target selected"
     }
     if selectedURL.path == "/" {
-      return "Target: Macintosh HD"
+      return "Macintosh HD"
+    }
+    return selectedURL.path
+  }
+
+  private var targetBadgeHelpText: String {
+    guard let selectedURL else {
+      return "No target selected"
+    }
+    if selectedURL.path == "/" {
+      return "Target: Macintosh HD (/)"
     }
     return "Target: \(selectedURL.path)"
+  }
+
+  private var targetBadge: some View {
+    Label {
+      Text("Target: \(targetDisplayPath)")
+        .lineLimit(1)
+        .truncationMode(.middle)
+    } icon: {
+      Image(systemName: "scope")
+    }
+    .font(.system(size: 12, weight: .medium))
+    .foregroundStyle(AppTheme.Colors.textSecondary)
+    .frame(maxWidth: Layout.targetBadgeMaxWidth, alignment: .leading)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 6)
+    .background(
+      Capsule(style: .continuous)
+        .fill(AppTheme.Colors.statusIdleBackground)
+        .overlay(
+          Capsule(style: .continuous)
+            .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
+        )
+    )
+    .help(targetBadgeHelpText)
   }
 
   private var statusPill: some View {
@@ -903,6 +926,7 @@ struct ScanSessionView: View {
         ForEach(Array(breadcrumbs.enumerated()), id: \.element.path) { index, node in
           breadcrumbChip(
             title: displayName(for: node),
+            helpText: node.path,
             systemImage: index == 0 ? "scope" : nil,
             isCurrent: index == breadcrumbs.count - 1,
             action: {
@@ -925,6 +949,7 @@ struct ScanSessionView: View {
 
   private func breadcrumbChip(
     title: String,
+    helpText: String,
     systemImage: String?,
     isCurrent: Bool,
     action: @escaping () -> Void
@@ -932,14 +957,22 @@ struct ScanSessionView: View {
     Button(action: action) {
       Group {
         if let systemImage {
-          Label(title, systemImage: systemImage)
+          Label {
+            Text(title)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          } icon: {
+            Image(systemName: systemImage)
+          }
         } else {
           Text(title)
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
       }
       .font(.system(size: 11, weight: isCurrent ? .semibold : .medium))
       .foregroundStyle(isCurrent ? AppTheme.Colors.accentForeground : AppTheme.Colors.textSecondary)
-      .lineLimit(1)
+      .frame(maxWidth: Layout.breadcrumbChipMaxWidth, alignment: .leading)
       .padding(.horizontal, 9)
       .padding(.vertical, 5)
       .background(
@@ -956,6 +989,7 @@ struct ScanSessionView: View {
     }
     .buttonStyle(.plain)
     .disabled(isCurrent)
+    .help(helpText)
   }
 
   private var selectedRadialDetailSnapshot: RadialBreakdownInspectorSnapshot? {

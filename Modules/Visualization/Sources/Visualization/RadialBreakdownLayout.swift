@@ -198,7 +198,8 @@ private struct LayoutEntry {
 
   init(node: FileNode) {
     id = node.path
-    label = node.name.isEmpty ? URL(fileURLWithPath: node.path).lastPathComponent : node.name
+    let preferredLabel = node.name.isEmpty ? URL(fileURLWithPath: node.path).lastPathComponent : node.name
+    label = sanitizedLabel(preferredLabel, fallbackPath: node.path)
     path = node.path
     isDirectory = node.isDirectory
     isAggregate = false
@@ -223,4 +224,28 @@ private struct LayoutEntry {
     self.sizeBytes = sizeBytes
     self.node = node
   }
+}
+
+private func sanitizedLabel(_ rawLabel: String, fallbackPath: String) -> String {
+  let cleanedLabel = rawLabel
+    .replacingOccurrences(of: "\n", with: " ")
+    .replacingOccurrences(of: "\r", with: " ")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  if !cleanedLabel.isEmpty {
+    return cleanedLabel
+  }
+
+  let fallbackLabel = URL(fileURLWithPath: fallbackPath).lastPathComponent
+    .replacingOccurrences(of: "\n", with: " ")
+    .replacingOccurrences(of: "\r", with: " ")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  if !fallbackLabel.isEmpty {
+    return fallbackLabel
+  }
+
+  let cleanedPath = fallbackPath
+    .replacingOccurrences(of: "\n", with: " ")
+    .replacingOccurrences(of: "\r", with: " ")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  return cleanedPath.isEmpty ? "Unknown" : cleanedPath
 }

@@ -54,4 +54,25 @@ final class RadialBreakdownLayoutTests: XCTestCase {
     XCTAssertEqual(firstLevel.count, 3)
     XCTAssertEqual(aggregate?.sizeBytes, 15)
   }
+
+  func testLabelsAreSanitizedToSingleLine() {
+    let noisyName = "very-long\nfolder\rname"
+    let root = FileNode(
+      name: "root",
+      path: "/root",
+      isDirectory: true,
+      sizeBytes: 10,
+      children: [
+        FileNode(name: noisyName, path: "/root/noisy", isDirectory: true, sizeBytes: 10)
+      ]
+    )
+
+    let arcs = RadialBreakdownLayout.makeArcs(from: root)
+    let firstLevel = arcs.first { $0.depth == 1 }
+
+    XCTAssertNotNil(firstLevel)
+    XCTAssertEqual(firstLevel?.label, "very-long folder name")
+    XCTAssertFalse(firstLevel?.label.contains("\n") ?? true)
+    XCTAssertFalse(firstLevel?.label.contains("\r") ?? true)
+  }
 }
