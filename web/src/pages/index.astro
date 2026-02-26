@@ -2,11 +2,11 @@
 import '../styles/global.css';
 import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
-import Screenshots from '../components/Screenshots.astro';
 import Features from '../components/Features.astro';
 import HowItWorks from '../components/HowItWorks.astro';
 import Privacy from '../components/Privacy.astro';
 import Footer from '../components/Footer.astro';
+import Preview from '../components/Preview.astro';
 ---
 
 <html lang="en" class="dark">
@@ -22,7 +22,7 @@ import Footer from '../components/Footer.astro';
     <meta property="og:title" content="LunarDisk" />
     <meta property="og:description" content="Know your disk. Clean it safely. An open-source macOS disk usage visualizer." />
     <meta property="og:type" content="website" />
-    <title>LunarDisk: Know your disk. Clean it safely.</title>
+    <title>LunarDisk - Understand your disk usage</title>
   </head>
   <body class="min-h-screen font-sans antialiased">
 
@@ -30,7 +30,7 @@ import Footer from '../components/Footer.astro';
 
     <main class="flex flex-1 flex-col">
       <Hero />
-      <Screenshots />
+      <Preview />
       <Features />
       <HowItWorks />
       <Privacy />
