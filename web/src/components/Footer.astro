@@ -1,0 +1,56 @@
+---
+const LINKS = [
+  {
+    label: 'GitHub',
+    href: 'https://github.com/CarboxyDev/Lunardisk',
+    external: true,
+  },
+  {
+    label: 'Releases',
+    href: 'https://github.com/CarboxyDev/Lunardisk/releases',
+    external: true,
+  },
+  {
+    label: 'Report an issue',
+    href: 'https://github.com/CarboxyDev/Lunardisk/issues',
+    external: true,
+  },
+];
+---
+
+<footer class="border-t border-border px-6 py-12">
+  <div class="mx-auto flex max-w-6xl flex-col items-center gap-6 text-center">
+
+    <div class="flex items-center gap-2.5">
+      <img src="/icon.svg" alt="LunarDisk" class="h-7 w-7 rounded-xl" />
+      <span class="font-semibold text-foreground">LunarDisk</span>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-center gap-6">
+      {LINKS.map(link => (
+        <a
+          href={link.href}
+          target={link.external ? '_blank' : undefined}
+          rel={link.external ? 'noopener noreferrer' : undefined}
+          class="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+
+    <p class="text-xs text-muted-foreground">
+      &copy; {new Date().getFullYear()} LunarDisk. Built by{' '}
+      <a
+        href="https://github.com/CarboxyDev"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="font-medium text-foreground transition-colors hover:text-primary"
+      >
+        CarboxyDev
+      </a>
+      . Open source under MIT.
+    </p>
+
+  </div>
+</footer>

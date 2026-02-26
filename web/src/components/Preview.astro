@@ -1,0 +1,60 @@
+---
+const SCREENS = [
+  {
+    title: 'Detailed insights',
+    description:
+      'Drill into any directory to see size breakdowns and file counts. Spot your largest storage consumers with precision.',
+    image: '/screenshots/scan-view-insights.png',
+    alt: 'LunarDisk scan view insights',
+  },
+  {
+    title: 'Safe cleanup actions',
+    description:
+      'Take action on what you find. Review exactly what you\'re about to delete before acting, with no accidental removals.',
+    image: '/screenshots/scan-view-actions.png',
+    alt: 'LunarDisk scan view actions',
+  },
+];
+---
+
+<section id="preview" class="px-6 py-20 md:py-28">
+  <div class="mx-auto max-w-6xl">
+
+    <div class="mb-16 text-center">
+      <h2
+        data-animate
+        class="mb-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"
+      >
+        A look inside LunarDisk
+      </h2>
+      <p data-animate data-delay="1" class="mx-auto max-w-2xl text-lg text-muted-foreground">
+        Thoughtfully designed UIs that give you clarity without clutter.
+      </p>
+    </div>
+
+    <div class="space-y-20">
+      {SCREENS.map((screen, index) => (
+        <div
+          data-animate
+          class={`flex flex-col items-center gap-10 md:gap-14 ${
+            index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'
+          }`}
+        >
+          <div class="flex-1 space-y-3">
+            <h3 class="text-2xl font-semibold text-foreground">{screen.title}</h3>
+            <p class="text-base leading-relaxed text-muted-foreground">{screen.description}</p>
+          </div>
+
+          <div class="w-full flex-[1.2]">
+            <img
+              src={screen.image}
+              alt={screen.alt}
+              class="w-full rounded-2xl object-cover object-top"
+              loading="lazy"
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

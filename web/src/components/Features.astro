@@ -1,0 +1,81 @@
+---
+import { ChartPie, FolderTree, ZoomIn, ShieldCheck, CodeXml, ChartColumnBig } from '@lucide/astro';
+
+const FEATURES = [
+  {
+    title: 'Visual disk map',
+    description:
+      'See your storage as an interactive radial chart. Spot large directories and files at a glance.',
+    icon: 'chart',
+  },
+  {
+    title: 'Recursive scanning',
+    description:
+      'Deep scan any folder or entire volume. Every subdirectory is mapped with accurate sizes you can trust.',
+    icon: 'folder',
+  },
+  {
+    title: 'Drill-down navigation',
+    description:
+      'Click any segment to zoom into that directory. Navigate deep into your folders to understand them better.',
+    icon: 'zoom',
+  },
+  {
+    title: 'File type breakdown',
+    description:
+      'Understand your storage by file type. Find where videos, developer caches, and other data quietly accumulate.',
+    icon: 'bar',
+  },
+  {
+    title: 'Local-first scanning',
+    description:
+      'All scanning stays entirely on your Mac. No data is read, transmitted, or stored anywhere outside your device.',
+    icon: 'shield',
+  },
+  {
+    title: 'Fully open source',
+    description:
+      'The entire codebase is on GitHub. Inspect it, fork it, and contribute freely.',
+    icon: 'code',
+  },
+] as const;
+---
+
+<section id="features" class="px-6 py-20 md:py-28">
+  <div class="mx-auto max-w-6xl">
+
+    <div class="mb-14 text-center">
+      <h2
+        data-animate
+        class="mb-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"
+      >
+        Everything you need to reclaim your disk
+      </h2>
+      <p data-animate data-delay="1" class="mx-auto max-w-2xl text-lg text-muted-foreground">
+        Built for macOS users who want clarity before they clean.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {FEATURES.map((feature, i) => (
+        <div
+          data-animate
+          data-delay={String((i % 3) + 1)}
+          class="group rounded-xl border border-border bg-card p-6 transition-shadow duration-200 hover:shadow-md"
+        >
+          <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            {feature.icon === 'chart' && <ChartPie class="h-5 w-5" />}
+            {feature.icon === 'folder' && <FolderTree class="h-5 w-5" />}
+            {feature.icon === 'zoom' && <ZoomIn class="h-5 w-5" />}
+            {feature.icon === 'bar' && <ChartColumnBig class="h-5 w-5" />}
+            {feature.icon === 'shield' && <ShieldCheck class="h-5 w-5" />}
+            {feature.icon === 'code' && <CodeXml class="h-5 w-5" />}
+          </div>
+          <h3 class="mb-2 text-base font-semibold text-foreground">{feature.title}</h3>
+          <p class="text-sm leading-relaxed text-muted-foreground">{feature.description}</p>
+        </div>
+      ))}
+    </div>
+
+  </div>
+</section>

@@ -1,0 +1,75 @@
+---
+import { HardDrive, WifiOff, EyeOff, Code2 } from '@lucide/astro';
+
+const PROMISES = [
+  {
+    title: 'No cloud, ever',
+    description:
+      'All scanning runs locally on your Mac. Your file names and sizes never leave your device.',
+    icon: 'drive',
+  },
+  {
+    title: 'No network requests',
+    description:
+      'LunarDisk makes zero network requests during or after a scan. There are no servers involved.',
+    icon: 'wifi-off',
+  },
+  {
+    title: 'No file content reading',
+    description:
+      'Only metadata (names, sizes, dates) is accessed. Your actual file contents are never read or touched.',
+    icon: 'eye-off',
+  },
+] as const;
+---
+
+<section id="privacy" class="px-6 py-20 md:py-28">
+  <div class="mx-auto max-w-6xl">
+
+    <div class="mb-14 text-center">
+      <h2
+        data-animate
+        class="mb-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"
+      >
+        Privacy is the foundation
+      </h2>
+      <p data-animate data-delay="1" class="mx-auto max-w-2xl text-lg text-muted-foreground">
+        LunarDisk was built with a local-first, least-privilege approach from day one.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      {PROMISES.map((promise, i) => (
+        <div
+          data-animate
+          data-delay={String(i + 1)}
+          class="rounded-xl border border-border bg-card p-6"
+        >
+          <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            {promise.icon === 'drive' && <HardDrive class="h-5 w-5" />}
+            {promise.icon === 'wifi-off' && <WifiOff class="h-5 w-5" />}
+            {promise.icon === 'eye-off' && <EyeOff class="h-5 w-5" />}
+          </div>
+          <h3 class="mb-2 text-base font-semibold text-foreground">{promise.title}</h3>
+          <p class="text-sm leading-relaxed text-muted-foreground">{promise.description}</p>
+        </div>
+      ))}
+    </div>
+
+    <div data-animate class="mt-8 flex items-center justify-center gap-2">
+      <Code2 class="h-4 w-4 text-muted-foreground" />
+      <p class="text-sm text-muted-foreground">
+        Don't just take our word for it.{' '}
+        <a
+          href="https://github.com/CarboxyDev/Lunardisk"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+        >
+          Explore the source code on GitHub
+        </a>
+      </p>
+    </div>
+
+  </div>
+</section>
