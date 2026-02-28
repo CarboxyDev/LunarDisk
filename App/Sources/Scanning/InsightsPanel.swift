@@ -603,13 +603,15 @@ struct ScanInsightsSnapshot: Sendable {
         Self.insertTopNode((current.node, current.depth), into: &topHotspots, limit: 5)
       }
 
-      let loweredPath = current.node.path.lowercased()
-      for rule in Self.cleanupRules {
-        if rule.matches(path: loweredPath) {
-          if let existing = cleanupMatches[rule.id], existing.node.sizeBytes >= current.node.sizeBytes {
-            continue
+      if current.node.isDirectory {
+        let loweredPath = current.node.path.lowercased()
+        for rule in Self.cleanupRules {
+          if rule.matches(path: loweredPath) {
+            if let existing = cleanupMatches[rule.id], existing.node.sizeBytes >= current.node.sizeBytes {
+              continue
+            }
+            cleanupMatches[rule.id] = (rule: rule, node: current.node)
           }
-          cleanupMatches[rule.id] = (rule: rule, node: current.node)
         }
       }
 
@@ -692,8 +694,11 @@ struct ScanInsightsSnapshot: Sendable {
   }
 
   private static func fileExtension(for node: FileNode) -> String {
-    let ext = URL(fileURLWithPath: node.name).pathExtension.lowercased()
-    return ext.isEmpty ? "<none>" : ext
+    let name = node.name
+    guard let dotIndex = name.lastIndex(of: ".") else { return "<none>" }
+    let afterDot = name[name.index(after: dotIndex)...]
+    guard !afterDot.isEmpty else { return "<none>" }
+    return afterDot.lowercased()
   }
 
   private struct CleanupRule: Sendable {
