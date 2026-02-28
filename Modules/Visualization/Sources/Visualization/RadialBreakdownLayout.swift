@@ -1,5 +1,8 @@
 import CoreScan
 import Foundation
+import os
+
+private let radialLayoutSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "RadialLayout")
 
 public enum RadialBreakdownLayout {
   public static func makeArcs(
@@ -9,9 +12,20 @@ public enum RadialBreakdownLayout {
     minVisibleFraction: Double = 0.007,
     maxArcCount: Int = 3_200
   ) -> [RadialBreakdownArc] {
-    guard root.sizeBytes > 0 else { return [] }
-    guard maxDepth > 0 else { return [] }
-    guard maxArcCount > 0 else { return [] }
+    let signpostState = radialLayoutSignposter.beginInterval("makeArcs", "maxDepth=\(maxDepth) maxArcs=\(maxArcCount)")
+
+    guard root.sizeBytes > 0 else {
+      radialLayoutSignposter.endInterval("makeArcs", signpostState)
+      return []
+    }
+    guard maxDepth > 0 else {
+      radialLayoutSignposter.endInterval("makeArcs", signpostState)
+      return []
+    }
+    guard maxArcCount > 0 else {
+      radialLayoutSignposter.endInterval("makeArcs", signpostState)
+      return []
+    }
 
     let start = -Double.pi / 2
     let end = (3 * Double.pi) / 2
@@ -45,6 +59,8 @@ public enum RadialBreakdownLayout {
       remainingArcBudget: &remainingArcBudget,
       into: &arcs
     )
+    radialLayoutSignposter.emitEvent("makeArcs.result", "\(arcs.count) arcs")
+    radialLayoutSignposter.endInterval("makeArcs", signpostState)
     return arcs
   }
 

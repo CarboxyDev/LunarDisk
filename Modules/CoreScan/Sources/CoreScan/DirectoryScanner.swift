@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let scanSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "Scan")
 
 public struct ScanProgress: Equatable, Sendable {
   public let itemsScanned: Int
@@ -106,6 +109,9 @@ public actor DirectoryScanner: FileScanning {
     sizeStrategy: ScanSizeStrategy,
     onProgress: (@Sendable (ScanProgress) -> Void)? = nil
   ) async throws -> FileNode {
+    let signpostState = scanSignposter.beginInterval("scanDirectory", "\(url.path)")
+    defer { scanSignposter.endInterval("scanDirectory", signpostState) }
+
     resetDiagnostics()
     scanProgressHandler = onProgress
     progressItemCount = 0
@@ -168,6 +174,8 @@ public actor DirectoryScanner: FileScanning {
       )
     }
 
+    let enumState = scanSignposter.beginInterval("enumerateDirectory", "\(url.lastPathComponent) depth=\(depth)")
+
     let childURLs: [URL]
     do {
       try Task.checkCancellation()
@@ -177,8 +185,10 @@ public actor DirectoryScanner: FileScanning {
         options: [.skipsPackageDescendants]
       )
     } catch is CancellationError {
+      scanSignposter.endInterval("enumerateDirectory", enumState)
       throw CancellationError()
     } catch {
+      scanSignposter.endInterval("enumerateDirectory", enumState)
       throw ScanError.unreadable(path: url.path, underlying: error)
     }
 
@@ -223,6 +233,8 @@ public actor DirectoryScanner: FileScanning {
       }
     }
 
+    scanSignposter.endInterval("enumerateDirectory", enumState)
+
     let total = children.reduce(Int64(0)) { partialResult, child in
       partialResult + child.sizeBytes
     }
@@ -237,6 +249,8 @@ public actor DirectoryScanner: FileScanning {
   }
 
   private func collapsedDirectorySize(at url: URL, sizeStrategy: ScanSizeStrategy) throws -> Int64 {
+    let collapseState = scanSignposter.beginInterval("collapsedDirectorySize", "\(url.lastPathComponent)")
+    defer { scanSignposter.endInterval("collapsedDirectorySize", collapseState) }
     do {
       try Task.checkCancellation()
       let childURLs = try fileManager.contentsOfDirectory(

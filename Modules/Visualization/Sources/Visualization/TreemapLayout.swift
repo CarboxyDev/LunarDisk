@@ -1,6 +1,9 @@
 import CoreGraphics
 import CoreScan
 import Foundation
+import os
+
+private let treemapSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "TreemapLayout")
 
 public enum TreemapLayout {
   public static func makeCells(
@@ -10,9 +13,20 @@ public enum TreemapLayout {
     minVisibleFraction: Double = 0.003,
     maxCellCount: Int = 2_400
   ) -> [TreemapCell] {
-    guard root.sizeBytes > 0 else { return [] }
-    guard maxDepth > 0 else { return [] }
-    guard maxCellCount > 0 else { return [] }
+    let signpostState = treemapSignposter.beginInterval("makeCells", "maxDepth=\(maxDepth) maxCells=\(maxCellCount)")
+
+    guard root.sizeBytes > 0 else {
+      treemapSignposter.endInterval("makeCells", signpostState)
+      return []
+    }
+    guard maxDepth > 0 else {
+      treemapSignposter.endInterval("makeCells", signpostState)
+      return []
+    }
+    guard maxCellCount > 0 else {
+      treemapSignposter.endInterval("makeCells", signpostState)
+      return []
+    }
 
     var cells: [TreemapCell] = []
     var remainingCellBudget = maxCellCount
@@ -26,6 +40,8 @@ public enum TreemapLayout {
       remainingCellBudget: &remainingCellBudget,
       into: &cells
     )
+    treemapSignposter.emitEvent("makeCells.result", "\(cells.count) cells")
+    treemapSignposter.endInterval("makeCells", signpostState)
     return cells
   }
 
@@ -146,6 +162,8 @@ public enum TreemapLayout {
   }
 
   private static func squarify(items: [SquarifyItem], in rect: CGRect) -> [Placement] {
+    let signpostState = treemapSignposter.beginInterval("squarify", "\(items.count) items")
+    defer { treemapSignposter.endInterval("squarify", signpostState) }
     guard !items.isEmpty else { return [] }
 
     var sortedItems = items.sorted { lhs, rhs in

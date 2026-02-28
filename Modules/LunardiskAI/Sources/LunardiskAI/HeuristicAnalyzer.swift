@@ -1,5 +1,8 @@
 import CoreScan
 import Foundation
+import os
+
+private let aiSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "AI")
 
 public protocol AIAnalyzing: Sendable {
   func generateInsights(for root: FileNode) async -> [Insight]
@@ -9,6 +12,9 @@ public struct HeuristicAnalyzer: AIAnalyzing {
   public init() {}
 
   public func generateInsights(for root: FileNode) async -> [Insight] {
+    let signpostState = aiSignposter.beginInterval("generateInsights", "root=\(root.name)")
+    defer { aiSignposter.endInterval("generateInsights", signpostState) }
+
     if Task.isCancelled {
       return []
     }

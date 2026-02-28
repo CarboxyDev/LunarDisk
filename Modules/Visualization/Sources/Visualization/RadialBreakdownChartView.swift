@@ -1,7 +1,10 @@
 import CoreGraphics
 import CoreScan
+import os
 import QuartzCore
 import SwiftUI
+
+private let chartSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "RadialChart")
 
 private final class RadialBreakdownChartData {
   let rootSizeBytes: Int64
@@ -32,6 +35,8 @@ private final class RadialBreakdownChartData {
     maxArcCount: Int,
     adaptiveFidelity: Bool
   ) {
+    let chartInitState = chartSignposter.beginInterval("ChartData.init", "root=\(root.name)")
+
     let defaultPalette: [Color] = [
       Color(red: 78 / 255, green: 168 / 255, blue: 230 / 255),
       Color(red: 104 / 255, green: 205 / 255, blue: 176 / 255),
@@ -47,6 +52,7 @@ private final class RadialBreakdownChartData {
       maxArcCount: maxArcCount
     )
 
+    let layoutState = chartSignposter.beginInterval("ChartData.layout")
     var arcs = RadialBreakdownLayout.makeArcs(
       from: root,
       maxDepth: requestedConfig.maxDepth,
@@ -71,6 +77,7 @@ private final class RadialBreakdownChartData {
         )
       }
     }
+    chartSignposter.endInterval("ChartData.layout", layoutState)
 
     let nonRootArcs = arcs.filter { $0.depth > 0 }
     let interactionFidelity = RadialBreakdownChartView.interactionFidelityConfig(forArcCount: nonRootArcs.count)
@@ -91,6 +98,7 @@ private final class RadialBreakdownChartData {
       )
     }
 
+    let groupState = chartSignposter.beginInterval("ChartData.grouping")
     var groupedByDepth: [Int: [RadialBreakdownArc]] = [:]
     for arc in nonRootArcs {
       groupedByDepth[arc.depth, default: []].append(arc)
@@ -119,7 +127,9 @@ private final class RadialBreakdownChartData {
     for arc in nonRootArcs {
       cachedBaseColors[arc.id] = RadialBreakdownChartView.makeBaseColor(for: arc, palette: resolvedPalette)
     }
+    chartSignposter.endInterval("ChartData.grouping", groupState)
 
+    let snapshotState = chartSignposter.beginInterval("ChartData.inspectorSnapshots")
     let safeRootSize = max(root.sizeBytes, 1)
     var cachedInspectorSnapshots: [String: RadialBreakdownInspectorSnapshot] = [:]
     cachedInspectorSnapshots.reserveCapacity(arcs.count)
@@ -161,6 +171,8 @@ private final class RadialBreakdownChartData {
       )
     }
 
+    chartSignposter.endInterval("ChartData.inspectorSnapshots", snapshotState)
+
     self.rootSizeBytes = root.sizeBytes
     self.rootArcID = arcs.first(where: { $0.depth == 0 })?.id ?? root.id
     self.nonRootArcs = nonRootArcs
@@ -174,6 +186,9 @@ private final class RadialBreakdownChartData {
     self.maxDepth = max(arcs.map(\.depth).max() ?? 1, 1)
     self.interactionFidelity = interactionFidelity
     self.majorArcIDsForHoverLift = majorArcIDsForHoverLift
+
+    chartSignposter.emitEvent("ChartData.result", "\(arcs.count) arcs")
+    chartSignposter.endInterval("ChartData.init", chartInitState)
   }
 }
 

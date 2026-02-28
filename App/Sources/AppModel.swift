@@ -1,6 +1,9 @@
 import CoreScan
 import Foundation
 import LunardiskAI
+import os
+
+private let pipelineSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "Pipeline")
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -86,8 +89,12 @@ final class AppModel: ObservableObject {
 
   private func scan(url: URL, scanID: UUID) async {
     guard activeScanID == scanID, !Task.isCancelled else { return }
+
+    let signpostState = pipelineSignposter.beginInterval("pipeline", "\(url.path)")
+
     isScanning = true
     defer {
+      pipelineSignposter.endInterval("pipeline", signpostState)
       if activeScanID == scanID {
         isScanning = false
         scanProgress = nil
@@ -115,6 +122,7 @@ final class AppModel: ObservableObject {
 
     do {
       try Task.checkCancellation()
+      pipelineSignposter.emitEvent("pipeline.phase", "begin filesystem scan")
       let scannedRoot = try await scanner.scan(
         at: url,
         maxDepth: 8,
@@ -124,6 +132,7 @@ final class AppModel: ObservableObject {
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }
 
+      pipelineSignposter.emitEvent("pipeline.phase", "scan complete, begin insights")
       rootNode = scannedRoot
       let diagnostics = await scanner.lastScanDiagnostics()
       guard activeScanID == scanID else { return }
@@ -141,6 +150,7 @@ final class AppModel: ObservableObject {
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }
 
+      pipelineSignposter.emitEvent("pipeline.phase", "insights complete")
       insights = generatedInsights
     } catch is CancellationError {
       return

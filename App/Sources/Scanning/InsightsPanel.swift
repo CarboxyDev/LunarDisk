@@ -1,5 +1,8 @@
 import CoreScan
+import os
 import SwiftUI
+
+private let snapshotSignposter = OSSignposter(subsystem: "com.lunardisk.perf", category: "Snapshots")
 
 struct InsightsPanel: View {
   let rootNode: FileNode
@@ -560,6 +563,9 @@ struct ScanInsightsSnapshot: Sendable {
   let extensionStats: [ExtensionStat]
 
   init(rootNode: FileNode) {
+    let signpostState = snapshotSignposter.beginInterval("InsightsSnapshot.init", "size=\(rootNode.sizeBytes)")
+    defer { snapshotSignposter.endInterval("InsightsSnapshot.init", signpostState) }
+
     let totalBytes = max(rootNode.sizeBytes, 1)
     totalSizeBytes = rootNode.sizeBytes
 
