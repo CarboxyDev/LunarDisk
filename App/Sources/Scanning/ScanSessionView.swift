@@ -36,9 +36,9 @@ private final class RadialInteractionState {
     }
   }
 
-  func resetDrill(for rootNode: FileNode?, hoverState: RadialHoverState, breakdownViewMode: ScanSessionView.BreakdownViewMode) {
+  func resetDrill(for rootNode: FileNode?, hoverState: RadialHoverState) {
     clearInspectorSnapshots(hoverState: hoverState)
-    supplementalMode = ScanSessionView.defaultSupplementalMode(for: breakdownViewMode)
+    supplementalMode = .details
     if let rootNode {
       drillPathStack = [rootNode.path]
     } else {
@@ -147,13 +147,6 @@ struct ScanSessionView: View {
     }
   }
 
-  enum BreakdownViewMode: String, CaseIterable, Identifiable {
-    case treemap
-    case radial
-
-    var id: String { rawValue }
-  }
-
   enum OverviewSupplementalMode: String, CaseIterable, Identifiable {
     case details
     case topItems
@@ -202,8 +195,6 @@ struct ScanSessionView: View {
   let onOpenFullDiskAccess: () -> Void
   let onRevealInFinder: (String) -> Void
 
-  @State private var treemapDensity: TreemapDensity = .clean
-  @State private var breakdownViewMode: BreakdownViewMode = .radial
   @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
   @State private var selectedSection: SessionSection = .overview
   @State private var revealHeader = false
@@ -292,19 +283,16 @@ struct ScanSessionView: View {
     .onChange(of: isScanning) { _, scanning in
       if scanning {
         selectedSection = .overview
-        radialState.resetDrill(for: nil, hoverState: hoverState, breakdownViewMode: breakdownViewMode)
+        radialState.resetDrill(for: nil, hoverState: hoverState)
       } else if let rootNode, radialState.drillPathStack.isEmpty {
-        radialState.resetDrill(for: rootNode, hoverState: hoverState, breakdownViewMode: breakdownViewMode)
+        radialState.resetDrill(for: rootNode, hoverState: hoverState)
       }
-    }
-    .onChange(of: breakdownViewMode) { _, mode in
-      radialState.supplementalMode = Self.defaultSupplementalMode(for: mode)
     }
     .onChange(of: rootNode?.id) { _, newRootID in
       if newRootID == nil {
         selectedSection = .overview
       }
-      radialState.resetDrill(for: rootNode, hoverState: hoverState, breakdownViewMode: breakdownViewMode)
+      radialState.resetDrill(for: rootNode, hoverState: hoverState)
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
     }
@@ -793,79 +781,32 @@ struct ScanSessionView: View {
     let effectiveChartHeight = min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
 
     return VStack(alignment: .leading, spacing: 12) {
-      HStack(alignment: .top, spacing: 12) {
-        Text("Storage Breakdown")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(AppTheme.Colors.textSecondary)
+      Text("Storage Breakdown")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
 
-        Spacer()
+      radialDrillControls(scanRootNode: scanRootNode)
 
-        breakdownModeSelector
-      }
-
-      if breakdownViewMode == .treemap {
-        HStack(spacing: 8) {
-          Label(ByteFormatter.string(from: rootNode.sizeBytes), systemImage: "externaldrive.fill")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-              Capsule(style: .continuous)
-                .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
-                .overlay(
-                  Capsule(style: .continuous)
-                    .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
-                )
-            )
-
-          Spacer()
-
-          treemapDensityControl
+      RadialBreakdownChartView(
+        root: rootNode,
+        palette: AppTheme.Colors.chartPalette,
+        onPathActivated: { path in
+          handleRadialPathActivation(path: path, scanRootNode: scanRootNode)
+        },
+        pinnedArcID: radialState.pinnedSnapshot?.id,
+        onHoverSnapshotChanged: { snapshot in
+          hoverState.hoverSnapshot = snapshot
+        },
+        onRootSnapshotReady: { snapshot in
+          hoverState.rootSnapshot = snapshot
         }
-        .transition(.opacity.combined(with: .move(edge: .top)))
+      )
+      .contextMenu {
+        RadialContextMenuContent(radialState: radialState, hoverState: hoverState)
       }
-
-      if breakdownViewMode == .radial {
-        radialDrillControls(scanRootNode: scanRootNode)
-          .transition(.opacity.combined(with: .move(edge: .top)))
-      }
-
-      ZStack {
-        if breakdownViewMode == .treemap {
-          TreemapChartView(
-            root: rootNode,
-            palette: AppTheme.Colors.chartPalette,
-            density: treemapDensity
-          )
-          .id("treemap-\(treemapDensity.rawValue)")
-          .transition(.opacity.combined(with: .scale(scale: 0.985)))
-        } else {
-          RadialBreakdownChartView(
-            root: rootNode,
-            palette: AppTheme.Colors.chartPalette,
-            onPathActivated: { path in
-              handleRadialPathActivation(path: path, scanRootNode: scanRootNode)
-            },
-            pinnedArcID: radialState.pinnedSnapshot?.id,
-            onHoverSnapshotChanged: { snapshot in
-              hoverState.hoverSnapshot = snapshot
-            },
-            onRootSnapshotReady: { snapshot in
-              hoverState.rootSnapshot = snapshot
-            }
-          )
-          .contextMenu {
-            RadialContextMenuContent(radialState: radialState, hoverState: hoverState)
-          }
-          .id("radial-\(rootNode.path)")
-          .transition(.opacity.combined(with: .scale(scale: 0.985)))
-        }
-      }
+      .id("radial-\(rootNode.path)")
       .frame(maxWidth: .infinity)
       .frame(height: effectiveChartHeight)
-      .animation(.easeInOut(duration: 0.22), value: breakdownViewMode)
-      .animation(.easeInOut(duration: 0.16), value: treemapDensity)
       .animation(.easeInOut(duration: 0.18), value: radialState.drillPathStack)
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -891,50 +832,13 @@ struct ScanSessionView: View {
     )
   }
 
-  private var breakdownModeSelector: some View {
-    LunarSegmentedControl(
-      options: [
-        LunarSegmentedControlOption("Radial", value: BreakdownViewMode.radial, systemImage: "chart.pie.fill"),
-        LunarSegmentedControlOption("Treemap", value: BreakdownViewMode.treemap, systemImage: "square.grid.2x2.fill")
-      ],
-      selection: $breakdownViewMode,
-      minItemWidth: 96
-    )
-    .frame(width: 248)
-  }
-
-  private var treemapDensityControl: some View {
-    LunarSegmentedControl(
-      options: [
-        LunarSegmentedControlOption("Simple", value: TreemapDensity.clean),
-        LunarSegmentedControlOption("Detailed", value: TreemapDensity.detailed)
-      ],
-      selection: $treemapDensity,
-      minItemWidth: 68,
-      horizontalPadding: 10,
-      verticalPadding: 6
-    )
-    .frame(width: 182)
-    .padding(.vertical, 2)
-  }
-
   private func supplementalResultsSections(
     rootNode: FileNode,
     useFixedWidth: Bool,
     targetHeight: CGFloat
   ) -> some View {
-    let sections = Group {
-      if breakdownViewMode == .radial {
-        radialSupplementalSections(rootNode: rootNode, targetHeight: targetHeight)
-      } else {
-        TopItemsPanel(
-          rootNode: rootNode,
-          onRevealInFinder: onRevealInFinder,
-          targetHeight: targetHeight
-        )
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
+    let sections = radialSupplementalSections(rootNode: rootNode, targetHeight: targetHeight)
+      .frame(maxWidth: .infinity, alignment: .topLeading)
 
     return Group {
       if useFixedWidth {
@@ -1057,15 +961,6 @@ struct ScanSessionView: View {
     .buttonStyle(.plain)
     .disabled(isCurrent)
     .help(helpText)
-  }
-
-  static func defaultSupplementalMode(for viewMode: BreakdownViewMode) -> OverviewSupplementalMode {
-    switch viewMode {
-    case .radial:
-      return .details
-    case .treemap:
-      return .topItems
-    }
   }
 
   private func focusedOverviewNode(in scanRootNode: FileNode) -> FileNode {

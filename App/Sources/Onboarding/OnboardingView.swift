@@ -36,7 +36,7 @@ struct OnboardingView: View {
       title: "Understand Storage Quickly",
       subtitle: "See where space is going without manual digging.",
       points: [
-        "Treemap highlights the biggest storage areas first.",
+        "Radial chart highlights the biggest storage areas first.",
         "Top Items supports both direct and deep views.",
         "Insights help you prioritize high-impact cleanup."
       ],
