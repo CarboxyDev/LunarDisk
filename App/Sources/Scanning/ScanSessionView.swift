@@ -4,17 +4,20 @@ import Observation
 import SwiftUI
 import Visualization
 
+/// Hover-specific state isolated from the main interaction state.
+/// Only views that need hover data should read from this object,
+/// preventing the parent `ScanSessionView.body` from re-evaluating on every hover event.
+@Observable
+private final class RadialHoverState {
+  var hoverSnapshot: RadialBreakdownInspectorSnapshot?
+  var rootSnapshot: RadialBreakdownInspectorSnapshot?
+}
+
 @Observable
 private final class RadialInteractionState {
   var drillPathStack: [String] = []
-  var hoverSnapshot: RadialBreakdownInspectorSnapshot?
-  var rootSnapshot: RadialBreakdownInspectorSnapshot?
   var pinnedSnapshot: RadialBreakdownInspectorSnapshot?
   var supplementalMode: ScanSessionView.OverviewSupplementalMode = .details
-
-  var selectedDetailSnapshot: RadialBreakdownInspectorSnapshot? {
-    pinnedSnapshot ?? hoverSnapshot ?? rootSnapshot
-  }
 
   func pinSelection(_ snapshot: RadialBreakdownInspectorSnapshot) {
     pinnedSnapshot = snapshot
@@ -25,21 +28,75 @@ private final class RadialInteractionState {
     pinnedSnapshot = nil
   }
 
-  func clearInspectorSnapshots(clearPinned: Bool = true) {
-    hoverSnapshot = nil
-    rootSnapshot = nil
+  func clearInspectorSnapshots(hoverState: RadialHoverState, clearPinned: Bool = true) {
+    hoverState.hoverSnapshot = nil
+    hoverState.rootSnapshot = nil
     if clearPinned {
       pinnedSnapshot = nil
     }
   }
 
-  func resetDrill(for rootNode: FileNode?, breakdownViewMode: ScanSessionView.BreakdownViewMode) {
-    clearInspectorSnapshots()
+  func resetDrill(for rootNode: FileNode?, hoverState: RadialHoverState, breakdownViewMode: ScanSessionView.BreakdownViewMode) {
+    clearInspectorSnapshots(hoverState: hoverState)
     supplementalMode = ScanSessionView.defaultSupplementalMode(for: breakdownViewMode)
     if let rootNode {
       drillPathStack = [rootNode.path]
     } else {
       drillPathStack = []
+    }
+  }
+}
+
+/// Wrapper that reads hover-dependent state in its own body,
+/// so changes to `hoverSnapshot` / `rootSnapshot` only re-render this subtree.
+private struct RadialDetailsPanelContainer: View {
+  let radialState: RadialInteractionState
+  let hoverState: RadialHoverState
+  let targetHeight: CGFloat
+
+  private var selectedDetailSnapshot: RadialBreakdownInspectorSnapshot? {
+    radialState.pinnedSnapshot ?? hoverState.hoverSnapshot ?? hoverState.rootSnapshot
+  }
+
+  var body: some View {
+    RadialDetailsPanel(
+      snapshot: selectedDetailSnapshot,
+      isPinned: radialState.pinnedSnapshot != nil,
+      onClearPinnedSelection: {
+        radialState.clearPinnedSelection()
+      },
+      targetHeight: targetHeight
+    )
+  }
+}
+
+/// Wrapper that reads hover state for the context menu in its own observation scope.
+private struct RadialContextMenuContent: View {
+  let radialState: RadialInteractionState
+  let hoverState: RadialHoverState
+
+  var body: some View {
+    if let hoveredSnapshot = hoverState.hoverSnapshot {
+      let isAlreadyPinned = radialState.pinnedSnapshot?.id == hoveredSnapshot.id
+      Button(isAlreadyPinned ? "Unpin \"\(hoveredSnapshot.label)\"" : "Pin \"\(hoveredSnapshot.label)\"") {
+        if isAlreadyPinned {
+          radialState.clearPinnedSelection()
+        } else {
+          radialState.pinSelection(hoveredSnapshot)
+        }
+      }
+    } else {
+      Button("Pin Hovered Item") {}
+        .disabled(true)
+    }
+
+    if let pinnedSnapshot = radialState.pinnedSnapshot,
+       hoverState.hoverSnapshot?.id != pinnedSnapshot.id
+    {
+      Divider()
+      Button("Unpin \"\(pinnedSnapshot.label)\"") {
+        radialState.clearPinnedSelection()
+      }
     }
   }
 }
@@ -154,6 +211,7 @@ struct ScanSessionView: View {
   @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
   @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
   @State private var radialState = RadialInteractionState()
+  @State private var hoverState = RadialHoverState()
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -234,9 +292,9 @@ struct ScanSessionView: View {
     .onChange(of: isScanning) { _, scanning in
       if scanning {
         selectedSection = .overview
-        radialState.resetDrill(for: nil, breakdownViewMode: breakdownViewMode)
+        radialState.resetDrill(for: nil, hoverState: hoverState, breakdownViewMode: breakdownViewMode)
       } else if let rootNode, radialState.drillPathStack.isEmpty {
-        radialState.resetDrill(for: rootNode, breakdownViewMode: breakdownViewMode)
+        radialState.resetDrill(for: rootNode, hoverState: hoverState, breakdownViewMode: breakdownViewMode)
       }
     }
     .onChange(of: breakdownViewMode) { _, mode in
@@ -246,7 +304,7 @@ struct ScanSessionView: View {
       if newRootID == nil {
         selectedSection = .overview
       }
-      radialState.resetDrill(for: rootNode, breakdownViewMode: breakdownViewMode)
+      radialState.resetDrill(for: rootNode, hoverState: hoverState, breakdownViewMode: breakdownViewMode)
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
     }
@@ -791,14 +849,14 @@ struct ScanSessionView: View {
             },
             pinnedArcID: radialState.pinnedSnapshot?.id,
             onHoverSnapshotChanged: { snapshot in
-              radialState.hoverSnapshot = snapshot
+              hoverState.hoverSnapshot = snapshot
             },
             onRootSnapshotReady: { snapshot in
-              radialState.rootSnapshot = snapshot
+              hoverState.rootSnapshot = snapshot
             }
           )
           .contextMenu {
-            radialChartContextMenu
+            RadialContextMenuContent(radialState: radialState, hoverState: hoverState)
           }
           .id("radial-\(rootNode.path)")
           .transition(.opacity.combined(with: .scale(scale: 0.985)))
@@ -897,12 +955,9 @@ struct ScanSessionView: View {
 
       Group {
         if radialState.supplementalMode == .details {
-          RadialDetailsPanel(
-            snapshot: radialState.selectedDetailSnapshot,
-            isPinned: radialState.pinnedSnapshot != nil,
-            onClearPinnedSelection: {
-              radialState.clearPinnedSelection()
-            },
+          RadialDetailsPanelContainer(
+            radialState: radialState,
+            hoverState: hoverState,
             targetHeight: adjustedHeight
           )
         } else {
@@ -929,31 +984,6 @@ struct ScanSessionView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  @ViewBuilder
-  private var radialChartContextMenu: some View {
-    if let hoveredSnapshot = radialState.hoverSnapshot {
-      let isAlreadyPinned = radialState.pinnedSnapshot?.id == hoveredSnapshot.id
-      Button(isAlreadyPinned ? "Unpin \"\(hoveredSnapshot.label)\"" : "Pin \"\(hoveredSnapshot.label)\"") {
-        if isAlreadyPinned {
-          radialState.clearPinnedSelection()
-        } else {
-          radialState.pinSelection(hoveredSnapshot)
-        }
-      }
-    } else {
-      Button("Pin Hovered Item") {}
-        .disabled(true)
-    }
-
-    if let pinnedSnapshot = radialState.pinnedSnapshot,
-       radialState.hoverSnapshot?.id != pinnedSnapshot.id
-    {
-      Divider()
-      Button("Unpin \"\(pinnedSnapshot.label)\"") {
-        radialState.clearPinnedSelection()
-      }
-    }
-  }
 
   private func radialDrillControls(scanRootNode: FileNode) -> some View {
     let breadcrumbs = radialBreadcrumbs(in: scanRootNode)
@@ -1079,13 +1109,13 @@ struct ScanSessionView: View {
     let currentStack = radialState.drillPathStack.isEmpty ? [scanRootNode.path] : radialState.drillPathStack
     guard nextStack != currentStack else { return }
 
-    radialState.clearInspectorSnapshots()
+    radialState.clearInspectorSnapshots(hoverState: hoverState)
     radialState.drillPathStack = nextStack
   }
 
   private func jumpToRadialBreadcrumb(path: String) {
     guard let index = radialState.drillPathStack.firstIndex(of: path) else { return }
-    radialState.clearInspectorSnapshots()
+    radialState.clearInspectorSnapshots(hoverState: hoverState)
     radialState.drillPathStack = Array(radialState.drillPathStack.prefix(index + 1))
   }
 
