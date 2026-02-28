@@ -244,6 +244,8 @@ struct ScanSessionView: View {
   @State private var trashQueueTrashIntent: TrashQueueTrashIntent?
   @State private var lastTrashQueueReport: FileActionBatchReport?
   @State private var trashToast: TrashToast?
+  @State private var sessionDeletedBytes: Int64 = 0
+  @State private var sessionDeletedCount: Int = 0
   @FocusState private var searchFieldFocused: Bool
   @Namespace private var sectionTabSelectionNamespace
 
@@ -408,6 +410,8 @@ struct ScanSessionView: View {
         clearSearch()
         trashQueueState.clear()
         lastTrashQueueReport = nil
+        sessionDeletedBytes = 0
+        sessionDeletedCount = 0
       } else if let rootNode, radialState.drillPathStack.isEmpty {
         radialState.resetDrill(for: rootNode, hoverState: hoverState)
       }
@@ -466,33 +470,65 @@ struct ScanSessionView: View {
   }
 
   private func runTrashQueue(_ intent: TrashQueueTrashIntent) {
-    let items = intent.actionableItems.map { (path: $0.path, estimatedBytes: $0.sizeBytes as Int64?) }
-    guard !items.isEmpty else {
+    let actionableItems = intent.actionableItems
+    guard !actionableItems.isEmpty else {
       trashQueueTrashIntent = nil
       return
     }
 
+    // Keep the original queued paths before canonicalization
+    let originalQueuedPaths = Set(actionableItems.map(\.path))
+
+    let items = actionableItems.map { (path: $0.path, estimatedBytes: $0.sizeBytes as Int64?) }
     let report = FileActionService.moveToTrash(items: items)
     lastTrashQueueReport = report
 
-    // Treat both .success and .missing as "gone" — missing means a parent was already deleted
-    let gonePaths = Set(
+    // Paths from the report are canonicalized — collect the ones that are gone
+    let canonicalGonePaths = Set(
       report.results
         .filter {
           switch $0.outcome {
-          case .success: return true
-          case .missing: return true
+          case .success, .missing: return true
           default: return false
           }
         }
         .map(\.path)
     )
 
-    // Also remove any queued children whose parent was deleted
-    let allQueuedPaths = trashQueueState.queuedPaths
-    var pathsToRemove = gonePaths
-    for queuedPath in allQueuedPaths {
-      let isChildOfGone = gonePaths.contains { gonePath in
+    // Failed canonical paths
+    let canonicalFailedPaths = Set(
+      report.results
+        .filter {
+          switch $0.outcome {
+          case .success, .missing: return false
+          default: return true
+          }
+        }
+        .map(\.path)
+    )
+
+    // Map original queued paths: if its canonical form succeeded/missing, it's gone
+    var goneOriginalPaths = Set<String>()
+    for originalPath in originalQueuedPaths {
+      let canonical = URL(fileURLWithPath: originalPath).standardized.path
+      if canonicalGonePaths.contains(canonical) {
+        goneOriginalPaths.insert(originalPath)
+      } else if !canonicalFailedPaths.contains(canonical) {
+        // Was deduped (parent was deleted) — also gone
+        let parentWasDeleted = canonicalGonePaths.contains { gonePath in
+          let prefix = gonePath.hasSuffix("/") ? gonePath : gonePath + "/"
+          return canonical.hasPrefix(prefix)
+        }
+        if parentWasDeleted {
+          goneOriginalPaths.insert(originalPath)
+        }
+      }
+    }
+
+    // Remove from queue: gone items + any queued children of gone items
+    var pathsToRemove = goneOriginalPaths
+    for queuedPath in trashQueueState.queuedPaths {
+      let isChildOfGone = goneOriginalPaths.contains { gonePath in
         let prefix = gonePath.hasSuffix("/") ? gonePath : gonePath + "/"
         return queuedPath.hasPrefix(prefix)
       }
@@ -502,31 +538,29 @@ struct ScanSessionView: View {
     }
     trashQueueState.removeSucceeded(paths: pathsToRemove)
 
-    // Prune the file tree so the chart updates
-    if let rootNode, !gonePaths.isEmpty {
-      if let pruned = rootNode.pruning(paths: gonePaths) {
+    // Prune the file tree using the original paths (which match the tree)
+    if let rootNode, !goneOriginalPaths.isEmpty {
+      if let pruned = rootNode.pruning(paths: goneOriginalPaths) {
         onRootNodeUpdate?(pruned)
       }
     }
 
-    // Show toast
-    let realFailures = report.results.filter {
-      switch $0.outcome {
-      case .success, .missing: return false
-      default: return true
-      }
-    }
-    let deletedCount = report.results.count - realFailures.count
+    // Track cumulative stats
+    let deletedCount = goneOriginalPaths.count
     let processedBytes = report.processedBytes ?? 0
+    let failedCount = actionableItems.count - deletedCount
+    sessionDeletedBytes += processedBytes
+    sessionDeletedCount += deletedCount
 
-    if realFailures.isEmpty {
+    // Show toast
+    if failedCount == 0 {
       trashToast = TrashToast(
         message: "Moved \(deletedCount) item\(deletedCount == 1 ? "" : "s") to Trash (\(ByteFormatter.string(from: processedBytes)))",
         isSuccess: true
       )
     } else {
       trashToast = TrashToast(
-        message: "\(deletedCount) moved to Trash, \(realFailures.count) failed",
+        message: "\(deletedCount) moved to Trash, \(failedCount) failed",
         isSuccess: false
       )
     }
@@ -1108,19 +1142,22 @@ struct ScanSessionView: View {
         }
       }
 
-      if !trashQueueState.isEmpty {
+      if !trashQueueState.isEmpty || sessionDeletedCount > 0 {
         TrashQueueTrayView(
           trashQueueState: trashQueueState,
           onReviewAndDelete: {
             trashQueueTrashIntent = trashQueueState.makeTrashIntent()
           },
           onRevealInFinder: onRevealInFinder,
-          lastReport: lastTrashQueueReport
+          lastReport: lastTrashQueueReport,
+          sessionDeletedBytes: sessionDeletedBytes,
+          sessionDeletedCount: sessionDeletedCount
         )
         .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
     .animation(.easeInOut(duration: 0.22), value: trashQueueState.isEmpty)
+    .animation(.easeInOut(duration: 0.22), value: sessionDeletedCount)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .background {
       Button("") {

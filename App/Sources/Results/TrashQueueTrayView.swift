@@ -6,14 +6,20 @@ struct TrashQueueTrayView: View {
   let onReviewAndDelete: () -> Void
   let onRevealInFinder: (String) -> Void
   var lastReport: FileActionBatchReport?
+  var sessionDeletedBytes: Int64 = 0
+  var sessionDeletedCount: Int = 0
 
   @State private var isExpanded = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      compactBar
-      if isExpanded {
-        expandedList
+      if trashQueueState.isEmpty {
+        sessionSummaryBar
+      } else {
+        queueBar
+        if isExpanded {
+          expandedList
+        }
       }
     }
     .padding(12)
@@ -21,7 +27,25 @@ struct TrashQueueTrayView: View {
     .animation(.easeInOut(duration: 0.18), value: isExpanded)
   }
 
-  private var compactBar: some View {
+  private var sessionSummaryBar: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "checkmark.circle.fill")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.green)
+
+      Text("Freed \(ByteFormatter.string(from: sessionDeletedBytes)) (\(sessionDeletedCount) item\(sessionDeletedCount == 1 ? "" : "s") deleted)")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+
+      Spacer(minLength: 8)
+
+      Text("Right-click the chart to queue more")
+        .font(.system(size: 11, weight: .regular))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
+    }
+  }
+
+  private var queueBar: some View {
     HStack(spacing: 10) {
       Image(systemName: "trash")
         .font(.system(size: 12, weight: .semibold))
@@ -49,8 +73,8 @@ struct TrashQueueTrayView: View {
 
       Spacer(minLength: 8)
 
-      if let lastReport {
-        reportBadge(lastReport)
+      if sessionDeletedCount > 0 {
+        freedBadge
       }
 
       Button("Clear All") {
@@ -65,19 +89,18 @@ struct TrashQueueTrayView: View {
     }
   }
 
-  private func reportBadge(_ report: FileActionBatchReport) -> some View {
-    let color: Color = report.hasFailures ? .orange : .green
-    return Text(report.summary)
+  private var freedBadge: some View {
+    Text("Freed \(ByteFormatter.string(from: sessionDeletedBytes))")
       .font(.system(size: 10, weight: .semibold))
-      .foregroundStyle(color)
+      .foregroundStyle(.green)
       .padding(.horizontal, 6)
       .padding(.vertical, 3)
       .background(
         Capsule(style: .continuous)
-          .fill(color.opacity(0.12))
+          .fill(Color.green.opacity(0.12))
           .overlay(
             Capsule(style: .continuous)
-              .stroke(color.opacity(0.3), lineWidth: 1)
+              .stroke(Color.green.opacity(0.3), lineWidth: 1)
           )
       )
   }

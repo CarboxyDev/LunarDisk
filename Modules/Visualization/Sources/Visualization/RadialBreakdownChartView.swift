@@ -253,7 +253,8 @@ public struct RadialBreakdownChartView: View {
   @State private var chartCache = ChartDataCache()
 
   private var chartData: RadialBreakdownChartData {
-    if let existing = chartCache.data, chartCache.key == root.path {
+    let cacheKey = "\(root.path)|\(root.sizeBytes)|\(root.children.count)"
+    if let existing = chartCache.data, chartCache.key == cacheKey {
       return existing
     }
     let data = RadialBreakdownChartData(
@@ -266,7 +267,7 @@ public struct RadialBreakdownChartView: View {
       adaptiveFidelity: configAdaptiveFidelity
     )
     chartCache.data = data
-    chartCache.key = root.path
+    chartCache.key = cacheKey
     return data
   }
 
