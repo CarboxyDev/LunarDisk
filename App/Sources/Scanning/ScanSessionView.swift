@@ -203,6 +203,11 @@ struct ScanSessionView: View {
   @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
   @State private var radialState = RadialInteractionState()
   @State private var hoverState = RadialHoverState()
+  @State private var searchQuery = ""
+  @State private var searchResult: FileNodeSearchResult?
+  @State private var searchTask: Task<Void, Never>?
+  @State private var isSearchFieldFocused = false
+  @FocusState private var searchFieldFocused: Bool
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -237,6 +242,85 @@ struct ScanSessionView: View {
 
   private var canInteractWithSessionTabs: Bool {
     !isScanning && rootNode != nil
+  }
+
+  private var activeSearchHighlightIDs: Set<String>? {
+    guard !searchQuery.isEmpty, let searchResult, !searchResult.matchedPaths.isEmpty else {
+      return nil
+    }
+    return searchResult.matchedPaths
+  }
+
+  private var searchField: some View {
+    HStack(spacing: 6) {
+      Image(systemName: "magnifyingglass")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(AppTheme.Colors.textTertiary)
+
+      TextField("Search files…", text: $searchQuery)
+        .textFieldStyle(.plain)
+        .font(.system(size: 12, weight: .regular))
+        .focused($searchFieldFocused)
+
+      if !searchQuery.isEmpty {
+        Button {
+          clearSearch()
+        } label: {
+          Image(systemName: "xmark.circle.fill")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(AppTheme.Colors.textTertiary)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(.horizontal, 9)
+    .padding(.vertical, 5)
+    .frame(maxWidth: 220)
+    .background(
+      Capsule(style: .continuous)
+        .fill(AppTheme.Colors.surfaceElevated.opacity(0.62))
+        .overlay(
+          Capsule(style: .continuous)
+            .stroke(
+              searchFieldFocused ? AppTheme.Colors.accent.opacity(0.6) : AppTheme.Colors.cardBorder,
+              lineWidth: 1
+            )
+        )
+    )
+    .onChange(of: searchQuery) { _, newQuery in
+      performDebouncedSearch(query: newQuery)
+    }
+  }
+
+  private func performDebouncedSearch(query: String) {
+    searchTask?.cancel()
+    searchTask = nil
+
+    guard !query.isEmpty, let rootNode else {
+      searchResult = nil
+      return
+    }
+
+    let snapshot = rootNode
+    searchTask = Task {
+      try? await Task.sleep(nanoseconds: 250_000_000)
+      guard !Task.isCancelled else { return }
+
+      let result = await Task.detached(priority: .utility) {
+        FileNodeSearch.search(in: snapshot, query: query)
+      }.value
+
+      guard !Task.isCancelled else { return }
+      searchResult = result
+      searchTask = nil
+    }
+  }
+
+  private func clearSearch() {
+    searchQuery = ""
+    searchTask?.cancel()
+    searchTask = nil
+    searchResult = nil
   }
 
   var body: some View {
@@ -284,6 +368,7 @@ struct ScanSessionView: View {
       if scanning {
         selectedSection = .overview
         radialState.resetDrill(for: nil, hoverState: hoverState)
+        clearSearch()
       } else if let rootNode, radialState.drillPathStack.isEmpty {
         radialState.resetDrill(for: rootNode, hoverState: hoverState)
       }
@@ -293,6 +378,7 @@ struct ScanSessionView: View {
         selectedSection = .overview
       }
       radialState.resetDrill(for: rootNode, hoverState: hoverState)
+      clearSearch()
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
     }
@@ -781,9 +867,15 @@ struct ScanSessionView: View {
     let effectiveChartHeight = min(max(clampedChartHeight, 410), Layout.chartMaxHeight)
 
     return VStack(alignment: .leading, spacing: 12) {
-      Text("Storage Breakdown")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(AppTheme.Colors.textSecondary)
+      HStack(alignment: .center, spacing: 12) {
+        Text("Storage Breakdown")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Spacer(minLength: 0)
+
+        searchField
+      }
 
       radialDrillControls(scanRootNode: scanRootNode)
 
@@ -794,6 +886,7 @@ struct ScanSessionView: View {
           handleRadialPathActivation(path: path, scanRootNode: scanRootNode)
         },
         pinnedArcID: radialState.pinnedSnapshot?.id,
+        highlightedArcIDs: activeSearchHighlightIDs,
         onHoverSnapshotChanged: { snapshot in
           hoverState.hoverSnapshot = snapshot
         },
@@ -853,26 +946,37 @@ struct ScanSessionView: View {
 
   private func radialSupplementalSections(rootNode: FileNode, targetHeight: CGFloat) -> some View {
     let adjustedHeight = targetHeight > 0 ? max(0, targetHeight - 44) : 0
+    let hasActiveSearch = !searchQuery.isEmpty
 
     return VStack(alignment: .leading, spacing: 10) {
-      overviewSupplementalModePicker
+      if hasActiveSearch {
+        SearchResultsPanel(
+          result: searchResult,
+          query: searchQuery,
+          isSearching: searchTask != nil && searchResult == nil,
+          onRevealInFinder: onRevealInFinder,
+          targetHeight: adjustedHeight
+        )
+      } else {
+        overviewSupplementalModePicker
 
-      Group {
-        if radialState.supplementalMode == .details {
-          RadialDetailsPanelContainer(
-            radialState: radialState,
-            hoverState: hoverState,
-            targetHeight: adjustedHeight
-          )
-        } else {
-          TopItemsPanel(
-            rootNode: rootNode,
-            onRevealInFinder: onRevealInFinder,
-            targetHeight: adjustedHeight
-          )
+        Group {
+          if radialState.supplementalMode == .details {
+            RadialDetailsPanelContainer(
+              radialState: radialState,
+              hoverState: hoverState,
+              targetHeight: adjustedHeight
+            )
+          } else {
+            TopItemsPanel(
+              rootNode: rootNode,
+              onRevealInFinder: onRevealInFinder,
+              targetHeight: adjustedHeight
+            )
+          }
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
       }
-      .frame(maxWidth: .infinity, alignment: .topLeading)
     }
   }
 

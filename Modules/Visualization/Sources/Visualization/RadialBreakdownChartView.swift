@@ -245,6 +245,7 @@ public struct RadialBreakdownChartView: View {
   private let configAdaptiveFidelity: Bool
   private let onPathActivated: ((String) -> Void)?
   private let pinnedArcID: String?
+  private let highlightedArcIDs: Set<String>?
   private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
   private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
 
@@ -291,6 +292,7 @@ public struct RadialBreakdownChartView: View {
     adaptiveFidelity: Bool = true,
     onPathActivated: ((String) -> Void)? = nil,
     pinnedArcID: String? = nil,
+    highlightedArcIDs: Set<String>? = nil,
     onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil,
     onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil
   ) {
@@ -303,6 +305,7 @@ public struct RadialBreakdownChartView: View {
     self.configAdaptiveFidelity = adaptiveFidelity
     self.onPathActivated = onPathActivated
     self.pinnedArcID = pinnedArcID
+    self.highlightedArcIDs = highlightedArcIDs
     self.onHoverSnapshotChanged = onHoverSnapshotChanged
     self.onRootSnapshotReady = onRootSnapshotReady
   }
@@ -380,6 +383,7 @@ public struct RadialBreakdownChartView: View {
       let metrics = chartMetrics(in: geometry.size)
       let activePinnedArcID = pinnedArcID
       let relatedArcIDs = relatedArcIDs(for: activePinnedArcID)
+      let activeHighlightedArcIDs = highlightedArcIDs
 
       ZStack {
         Canvas { context, _ in
@@ -391,6 +395,7 @@ public struct RadialBreakdownChartView: View {
               hoveredArcID: renderedHoverArcID,
               hoverPresentationProgress: hoverPresentationProgress,
               relatedArcIDs: relatedArcIDs,
+              highlightedArcIDs: activeHighlightedArcIDs,
               context: &context
             )
           }
@@ -510,6 +515,7 @@ public struct RadialBreakdownChartView: View {
     hoveredArcID: String?,
     hoverPresentationProgress: CGFloat,
     relatedArcIDs: Set<String>?,
+    highlightedArcIDs: Set<String>?,
     context: inout GraphicsContext
   ) {
     let isSelected = activeArcID == arc.id
@@ -569,6 +575,7 @@ public struct RadialBreakdownChartView: View {
           for: arc,
           activeArcID: activeArcID,
           relatedArcIDs: relatedArcIDs,
+          highlightedArcIDs: highlightedArcIDs,
           hoveredArcID: hoveredArcID,
           hoverPresentationProgress: hoverProgress
         )
@@ -608,6 +615,7 @@ public struct RadialBreakdownChartView: View {
     for arc: RadialBreakdownArc,
     activeArcID: String?,
     relatedArcIDs: Set<String>?,
+    highlightedArcIDs: Set<String>?,
     hoveredArcID: String?,
     hoverPresentationProgress: CGFloat
   ) -> Color {
@@ -621,6 +629,12 @@ public struct RadialBreakdownChartView: View {
         opacity = arc.id == activeArcID ? min(depthOpacity + 0.08, 1) : depthOpacity
       } else {
         opacity = depthOpacity * 0.26
+      }
+    } else if let highlightedArcIDs, !highlightedArcIDs.isEmpty {
+      if highlightedArcIDs.contains(arc.id) {
+        opacity = min(depthOpacity + 0.06, 1)
+      } else {
+        opacity = depthOpacity * 0.22
       }
     } else if let hoveredArcID {
       if arc.id == hoveredArcID {
