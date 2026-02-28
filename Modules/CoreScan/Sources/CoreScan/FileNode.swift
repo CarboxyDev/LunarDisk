@@ -37,19 +37,13 @@ public struct FileNode: Identifiable, Sendable {
 extension FileNode: Equatable {
   public static func == (lhs: FileNode, rhs: FileNode) -> Bool {
     lhs.path == rhs.path
-      && lhs.name == rhs.name
-      && lhs.isDirectory == rhs.isDirectory
       && lhs.sizeBytes == rhs.sizeBytes
-      && lhs.children == rhs.children
   }
 }
 
 extension FileNode: Hashable {
   public func hash(into hasher: inout Hasher) {
     hasher.combine(path)
-    hasher.combine(name)
-    hasher.combine(isDirectory)
     hasher.combine(sizeBytes)
-    hasher.combine(children)
   }
 }

@@ -177,6 +177,11 @@ private final class RadialBreakdownChartData {
   }
 }
 
+private final class ChartDataCache {
+  var data: RadialBreakdownChartData?
+  var key: String = ""
+}
+
 public struct RadialBreakdownChartView: View {
   private struct ChartMetrics {
     let center: CGPoint
@@ -216,11 +221,37 @@ public struct RadialBreakdownChartView: View {
     Color(red: 195 / 255, green: 171 / 255, blue: 90 / 255),
   ]
 
-  private let chartData: RadialBreakdownChartData
+  private let root: FileNode
+  private let configPalette: [Color]
+  private let configMaxDepth: Int
+  private let configMaxChildrenPerNode: Int
+  private let configMinVisibleFraction: Double
+  private let configMaxArcCount: Int
+  private let configAdaptiveFidelity: Bool
   private let onPathActivated: ((String) -> Void)?
   private let pinnedArcID: String?
   private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
   private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
+
+  @State private var chartCache = ChartDataCache()
+
+  private var chartData: RadialBreakdownChartData {
+    if let existing = chartCache.data, chartCache.key == root.path {
+      return existing
+    }
+    let data = RadialBreakdownChartData(
+      root: root,
+      palette: configPalette,
+      maxDepth: configMaxDepth,
+      maxChildrenPerNode: configMaxChildrenPerNode,
+      minVisibleFraction: configMinVisibleFraction,
+      maxArcCount: configMaxArcCount,
+      adaptiveFidelity: configAdaptiveFidelity
+    )
+    chartCache.data = data
+    chartCache.key = root.path
+    return data
+  }
 
   @State private var hoveredArcID: String?
   @State private var renderedHoverArcID: String?
@@ -248,15 +279,13 @@ public struct RadialBreakdownChartView: View {
     onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil,
     onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil
   ) {
-    self.chartData = RadialBreakdownChartData(
-      root: root,
-      palette: palette,
-      maxDepth: maxDepth,
-      maxChildrenPerNode: maxChildrenPerNode,
-      minVisibleFraction: minVisibleFraction,
-      maxArcCount: maxArcCount,
-      adaptiveFidelity: adaptiveFidelity
-    )
+    self.root = root
+    self.configPalette = palette
+    self.configMaxDepth = maxDepth
+    self.configMaxChildrenPerNode = maxChildrenPerNode
+    self.configMinVisibleFraction = minVisibleFraction
+    self.configMaxArcCount = maxArcCount
+    self.configAdaptiveFidelity = adaptiveFidelity
     self.onPathActivated = onPathActivated
     self.pinnedArcID = pinnedArcID
     self.onHoverSnapshotChanged = onHoverSnapshotChanged
