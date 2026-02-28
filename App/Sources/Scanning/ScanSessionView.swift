@@ -1090,37 +1090,43 @@ struct ScanSessionView: View {
   }
 
   private func nodePathChain(to targetPath: String, in rootNode: FileNode) -> [FileNode]? {
-    var stack: [(node: FileNode, chain: [FileNode])] = [(rootNode, [rootNode])]
-
-    while let current = stack.popLast() {
-      if current.node.path == targetPath {
-        return current.chain
-      }
-
-      if current.node.isDirectory, !current.node.children.isEmpty {
-        for child in current.node.children.reversed() {
-          stack.append((child, current.chain + [child]))
-        }
-      }
+    if rootNode.path == targetPath {
+      return [rootNode]
     }
-    return nil
+    guard targetPath.hasPrefix(rootNode.path) else { return nil }
+
+    var chain: [FileNode] = [rootNode]
+    var current = rootNode
+
+    while current.path != targetPath {
+      guard let next = current.children.first(where: {
+        $0.path == targetPath || targetPath.hasPrefix($0.path + "/") || targetPath.hasPrefix($0.path)
+      }) else {
+        return nil
+      }
+      chain.append(next)
+      current = next
+    }
+
+    return chain
   }
 
   private func node(at path: String, in rootNode: FileNode) -> FileNode? {
     if rootNode.path == path {
       return rootNode
     }
+    guard path.hasPrefix(rootNode.path) else { return nil }
 
-    var stack: [FileNode] = rootNode.children
-    while let current = stack.popLast() {
-      if current.path == path {
-        return current
+    var current = rootNode
+    while current.path != path {
+      guard let next = current.children.first(where: {
+        $0.path == path || path.hasPrefix($0.path + "/") || path.hasPrefix($0.path)
+      }) else {
+        return nil
       }
-      if current.isDirectory, !current.children.isEmpty {
-        stack.append(contentsOf: current.children)
-      }
+      current = next
     }
-    return nil
+    return current
   }
 
   private func displayName(for node: FileNode) -> String {

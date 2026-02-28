@@ -175,9 +175,7 @@ public actor DirectoryScanner: FileScanning {
         at: url,
         includingPropertiesForKeys: Array(keys),
         options: [.skipsPackageDescendants]
-      ).sorted { lhs, rhs in
-        lhs.path < rhs.path
-      }
+      )
     } catch is CancellationError {
       throw CancellationError()
     } catch {

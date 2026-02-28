@@ -133,14 +133,15 @@ public enum RadialBreakdownLayout {
   // Deep linear chains produce visually noisy rings with little information.
   // Expand only when a directory has branching, or when still near the root.
   private static func shouldExpand(_ node: FileNode, depth: Int) -> Bool {
-    let nonZeroChildren = node.children.filter { $0.sizeBytes > 0 }
-    if nonZeroChildren.isEmpty {
-      return false
+    var nonZeroCount = 0
+    for child in node.children {
+      if child.sizeBytes > 0 {
+        nonZeroCount += 1
+        if depth <= 2 { return true }
+        if nonZeroCount > 1 { return true }
+      }
     }
-    if depth <= 2 {
-      return true
-    }
-    return nonZeroChildren.count > 1
+    return false
   }
 
   private static func makeEntries(
