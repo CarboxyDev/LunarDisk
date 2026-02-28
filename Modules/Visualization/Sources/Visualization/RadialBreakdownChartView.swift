@@ -279,6 +279,8 @@ public struct RadialBreakdownChartView: View {
   @State private var hoverClearTask: Task<Void, Never>?
   @State private var hoverPresentationResetTask: Task<Void, Never>?
   @State private var hoverPresentationAnimationTask: Task<Void, Never>?
+  @State private var entranceRevealClock: CGFloat = 0
+  @State private var entranceAnimationTask: Task<Void, Never>?
 
   public init(root: FileNode) {
     self.init(root: root, palette: Self.defaultPalette, onPathActivated: nil)
@@ -322,6 +324,7 @@ public struct RadialBreakdownChartView: View {
       .onAppear {
         onRootSnapshotReady?(makeInspectorSnapshot(forArcID: chartData.rootArcID))
         onHoverSnapshotChanged?(nil)
+        performEntranceReveal()
       }
       .onChange(of: hoveredArcID) { oldHoveredArcID, newHoveredArcID in
         hoverSnapshotTask?.cancel()
@@ -373,12 +376,15 @@ public struct RadialBreakdownChartView: View {
         hoverClearTask?.cancel()
         hoverPresentationResetTask?.cancel()
         hoverPresentationAnimationTask?.cancel()
+        entranceAnimationTask?.cancel()
         hoverSnapshotTask = nil
         hoverClearTask = nil
         hoverPresentationResetTask = nil
         hoverPresentationAnimationTask = nil
+        entranceAnimationTask = nil
         renderedHoverArcID = nil
         setHoverPresentationProgress(0)
+        entranceRevealClock = 0
       }
   }
 
@@ -393,17 +399,39 @@ public struct RadialBreakdownChartView: View {
       ZStack {
         Canvas { context, _ in
           for arc in chartData.nonRootArcs {
-            drawArc(
-              arc,
-              using: metrics,
-              activeArcID: activePinnedArcID,
-              hoveredArcID: renderedHoverArcID,
-              hoverPresentationProgress: hoverPresentationProgress,
-              relatedArcIDs: relatedArcIDs,
-              highlightedArcIDs: activeHighlightedArcIDs,
-              queuedArcIDs: activeQueuedArcIDs,
-              context: &context
-            )
+            let depthEntrance = entranceProgress(forDepth: arc.depth)
+            guard depthEntrance > 0.001 else { continue }
+
+            if depthEntrance < 0.999 {
+              context.drawLayer { layerCtx in
+                layerCtx.opacity = Double(depthEntrance)
+                drawArc(
+                  arc,
+                  using: metrics,
+                  activeArcID: activePinnedArcID,
+                  hoveredArcID: renderedHoverArcID,
+                  hoverPresentationProgress: hoverPresentationProgress,
+                  relatedArcIDs: relatedArcIDs,
+                  highlightedArcIDs: activeHighlightedArcIDs,
+                  queuedArcIDs: activeQueuedArcIDs,
+                  entranceProgress: depthEntrance,
+                  context: &layerCtx
+                )
+              }
+            } else {
+              drawArc(
+                arc,
+                using: metrics,
+                activeArcID: activePinnedArcID,
+                hoveredArcID: renderedHoverArcID,
+                hoverPresentationProgress: hoverPresentationProgress,
+                relatedArcIDs: relatedArcIDs,
+                highlightedArcIDs: activeHighlightedArcIDs,
+                queuedArcIDs: activeQueuedArcIDs,
+                entranceProgress: 1,
+                context: &context
+              )
+            }
           }
         }
         .contentShape(Rectangle())
@@ -523,6 +551,7 @@ public struct RadialBreakdownChartView: View {
     relatedArcIDs: Set<String>?,
     highlightedArcIDs: Set<String>?,
     queuedArcIDs: Set<String>?,
+    entranceProgress: CGFloat = 1,
     context: inout GraphicsContext
   ) {
     let isSelected = activeArcID == arc.id
@@ -547,6 +576,15 @@ public struct RadialBreakdownChartView: View {
       ringBounds.inner = max(metrics.donutRadius + 0.6, inner)
       ringBounds.outer = min(metrics.chartRadius - 0.6, outer)
       ringBounds.outer = max(ringBounds.outer, ringBounds.inner + 0.8)
+    }
+
+    if entranceProgress < 1 {
+      let targetInner = ringBounds.inner
+      let targetOuter = ringBounds.outer
+      let compressedInner = metrics.donutRadius + 2
+      let compressedOuter = metrics.donutRadius + 4
+      ringBounds.inner = compressedInner + (targetInner - compressedInner) * entranceProgress
+      ringBounds.outer = compressedOuter + (targetOuter - compressedOuter) * entranceProgress
     }
 
     let span = arc.endAngle - arc.startAngle
@@ -769,6 +807,53 @@ public struct RadialBreakdownChartView: View {
     hoverPresentationProgress = min(max(value, 0), 1)
   }
 
+  // MARK: – Entrance reveal animation
+
+  /// Per-depth entrance progress (0 = hidden, 1 = fully revealed).
+  /// Outer rings lag behind inner rings, producing a ripple-from-center effect.
+  private func entranceProgress(forDepth depth: Int) -> CGFloat {
+    let offset = 0.3 + CGFloat(max(depth - 1, 0)) * 0.78
+    let raw = (entranceRevealClock - offset) / 1.0
+    let clamped = min(max(raw, 0), 1)
+    return clamped * clamped * (3 - 2 * clamped) // smoothstep
+  }
+
+  /// Center total-badge entrance (leads the rings slightly).
+  private func entranceBadgeProgress() -> CGFloat {
+    let raw = entranceRevealClock / 0.55
+    let clamped = min(max(raw, 0), 1)
+    return clamped * clamped * (3 - 2 * clamped)
+  }
+
+  /// Drives `entranceRevealClock` from 0 → target over a short duration,
+  /// causing rings to appear one-by-one from center outward.
+  private func performEntranceReveal() {
+    entranceAnimationTask?.cancel()
+    entranceRevealClock = 0
+
+    let maxDepth = max(chartData.maxDepth, 1)
+    let targetClock = CGFloat(maxDepth) + 0.5
+    let totalDuration = max(0.45, 0.1 + Double(maxDepth) * 0.11)
+
+    entranceAnimationTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 50_000_000)
+      guard !Task.isCancelled else { return }
+
+      let startedAt = CACurrentMediaTime()
+      while !Task.isCancelled {
+        let elapsed = CACurrentMediaTime() - startedAt
+        let rawProgress = min(elapsed / totalDuration, 1)
+        entranceRevealClock = CGFloat(rawProgress) * targetClock
+        if rawProgress >= 1 { break }
+        try? await Task.sleep(nanoseconds: 14_000_000)
+      }
+
+      guard !Task.isCancelled else { return }
+      entranceRevealClock = targetClock
+      entranceAnimationTask = nil
+    }
+  }
+
   private func animateHoverPresentation(to target: CGFloat, duration: CFTimeInterval) {
     hoverPresentationAnimationTask?.cancel()
     let clampedTarget = min(max(target, 0), 1)
@@ -884,6 +969,8 @@ public struct RadialBreakdownChartView: View {
       Circle()
         .stroke(Color.white.opacity(0.2), lineWidth: 0.9)
     )
+    .opacity(Double(entranceBadgeProgress()))
+    .scaleEffect(0.78 + 0.22 * entranceBadgeProgress())
     .position(metrics.center)
     .allowsHitTesting(false)
   }
