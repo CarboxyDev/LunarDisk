@@ -174,7 +174,10 @@ enum FileActionService {
   private static let blockedPrefixes = [
     "/System", "/usr", "/bin", "/sbin",
     "/private/etc", "/private/var/db",
-    "/Library/Keychains"
+    "/Library/Keychains",
+    "/Applications",
+    "/Library/Frameworks",
+    "/private/var/folders"
   ]
 
   private static func isBlockedSystemPath(_ path: String) -> Bool {
@@ -555,6 +558,10 @@ struct ScanActionsSnapshot: Sendable {
       return .caution
     }
 
+    if isAppBundle(path: lowercasedPath) {
+      return .caution
+    }
+
     if pathMatchesToken(lowercasedPath, token: "/library/caches/") ||
       pathMatchesToken(lowercasedPath, token: "/.cache/") ||
       pathMatchesToken(lowercasedPath, token: "/library/developer/xcode/deriveddata/") {
@@ -566,6 +573,11 @@ struct ScanActionsSnapshot: Sendable {
     }
 
     return fallback
+  }
+
+  /// Detects `.app` bundles — trashing these removes entire applications.
+  private static func isAppBundle(path: String) -> Bool {
+    path.hasSuffix(".app") || path.contains(".app/")
   }
 
   private static func isSystemSensitive(path: String) -> Bool {
@@ -584,7 +596,11 @@ struct ScanActionsSnapshot: Sendable {
     "/private/var/db/",
     "/library/application support/",
     "/library/preferences/",
-    "/library/keychains/"
+    "/library/keychains/",
+    "/library/containers/",
+    "/library/group containers/",
+    "/library/frameworks/",
+    "/applications/"
   ]
 
   private static func pathDepth(_ path: String) -> Int {
