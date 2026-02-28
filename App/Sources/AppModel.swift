@@ -71,6 +71,10 @@ final class AppModel: ObservableObject {
     volumeCapacity = url.flatMap { Self.fetchVolumeCapacity(for: $0) }
   }
 
+  func updateRootNode(_ newRoot: FileNode) {
+    rootNode = newRoot
+  }
+
   func scanMacintoshHD() {
     selectScanTarget(URL(fileURLWithPath: "/", isDirectory: true))
     startScan()

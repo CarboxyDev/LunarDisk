@@ -34,6 +34,37 @@ public struct FileNode: Identifiable, Sendable {
   }
 }
 
+extension FileNode {
+  /// Returns a new tree with the given paths removed and sizes recomputed.
+  /// If this node itself is in the removed set, returns nil.
+  public func pruning(paths: Set<String>) -> FileNode? {
+    guard !paths.contains(path) else { return nil }
+
+    let prunedChildren = children.compactMap { $0.pruning(paths: paths) }
+
+    if prunedChildren.count == children.count,
+       prunedChildren.elementsEqual(children, by: { $0.path == $1.path && $0.sizeBytes == $1.sizeBytes })
+    {
+      return self
+    }
+
+    let newSize: Int64
+    if isDirectory {
+      newSize = prunedChildren.reduce(0) { $0 + $1.sizeBytes }
+    } else {
+      newSize = sizeBytes
+    }
+
+    return FileNode(
+      name: name,
+      path: path,
+      isDirectory: isDirectory,
+      sizeBytes: newSize,
+      children: prunedChildren
+    )
+  }
+}
+
 extension FileNode: Equatable {
   public static func == (lhs: FileNode, rhs: FileNode) -> Bool {
     lhs.path == rhs.path

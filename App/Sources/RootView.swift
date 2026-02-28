@@ -97,7 +97,8 @@ struct RootView: View {
         onOpenFullDiskAccess: openFullDiskAccessSettings,
         previousSummary: model.previousSummaryForTarget,
         onRevealInFinder: revealInFinder(path:),
-        volumeCapacity: model.volumeCapacity
+        volumeCapacity: model.volumeCapacity,
+        onRootNodeUpdate: { model.updateRootNode($0) }
       )
       .transition(
         .asymmetric(

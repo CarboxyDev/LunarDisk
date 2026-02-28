@@ -73,6 +73,16 @@ private struct RadialDetailsPanelContainer: View {
 }
 
 /// Wrapper that reads hover state for the context menu in its own observation scope.
+private struct TrashToast: Identifiable, Equatable {
+  let id = UUID()
+  let message: String
+  let isSuccess: Bool
+
+  static func == (lhs: TrashToast, rhs: TrashToast) -> Bool {
+    lhs.id == rhs.id
+  }
+}
+
 private struct RadialContextMenuContent: View {
   let radialState: RadialInteractionState
   let hoverState: RadialHoverState
@@ -216,6 +226,7 @@ struct ScanSessionView: View {
   let previousSummary: ScanSummary?
   let onRevealInFinder: (String) -> Void
   let volumeCapacity: AppModel.VolumeCapacity?
+  var onRootNodeUpdate: ((FileNode) -> Void)?
 
   @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
   @State private var selectedSection: SessionSection = .overview
@@ -232,6 +243,7 @@ struct ScanSessionView: View {
   @State private var trashQueueState = TrashQueueState()
   @State private var trashQueueTrashIntent: TrashQueueTrashIntent?
   @State private var lastTrashQueueReport: FileActionBatchReport?
+  @State private var trashToast: TrashToast?
   @FocusState private var searchFieldFocused: Bool
   @Namespace private var sectionTabSelectionNamespace
 
@@ -435,6 +447,22 @@ struct ScanSessionView: View {
         Text("This will move \(actionable) item\(actionable == 1 ? "" : "s") (\(bytes)) to the Trash.")
       }
     }
+    .overlay(alignment: .top) {
+      if let toast = trashToast {
+        trashToastView(toast)
+          .transition(.move(edge: .top).combined(with: .opacity))
+          .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+              withAnimation(.easeOut(duration: 0.25)) {
+                if trashToast?.id == toast.id {
+                  trashToast = nil
+                }
+              }
+            }
+          }
+      }
+    }
+    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: trashToast)
   }
 
   private func runTrashQueue(_ intent: TrashQueueTrashIntent) {
@@ -447,16 +475,88 @@ struct ScanSessionView: View {
     let report = FileActionService.moveToTrash(items: items)
     lastTrashQueueReport = report
 
-    let succeededPaths = Set(
+    // Treat both .success and .missing as "gone" — missing means a parent was already deleted
+    let gonePaths = Set(
       report.results
         .filter {
-          if case .success = $0.outcome { return true }
-          return false
+          switch $0.outcome {
+          case .success: return true
+          case .missing: return true
+          default: return false
+          }
         }
         .map(\.path)
     )
-    trashQueueState.removeSucceeded(paths: succeededPaths)
+
+    // Also remove any queued children whose parent was deleted
+    let allQueuedPaths = trashQueueState.queuedPaths
+    var pathsToRemove = gonePaths
+    for queuedPath in allQueuedPaths {
+      let isChildOfGone = gonePaths.contains { gonePath in
+        let prefix = gonePath.hasSuffix("/") ? gonePath : gonePath + "/"
+        return queuedPath.hasPrefix(prefix)
+      }
+      if isChildOfGone {
+        pathsToRemove.insert(queuedPath)
+      }
+    }
+    trashQueueState.removeSucceeded(paths: pathsToRemove)
+
+    // Prune the file tree so the chart updates
+    if let rootNode, !gonePaths.isEmpty {
+      if let pruned = rootNode.pruning(paths: gonePaths) {
+        onRootNodeUpdate?(pruned)
+      }
+    }
+
+    // Show toast
+    let realFailures = report.results.filter {
+      switch $0.outcome {
+      case .success, .missing: return false
+      default: return true
+      }
+    }
+    let deletedCount = report.results.count - realFailures.count
+    let processedBytes = report.processedBytes ?? 0
+
+    if realFailures.isEmpty {
+      trashToast = TrashToast(
+        message: "Moved \(deletedCount) item\(deletedCount == 1 ? "" : "s") to Trash (\(ByteFormatter.string(from: processedBytes)))",
+        isSuccess: true
+      )
+    } else {
+      trashToast = TrashToast(
+        message: "\(deletedCount) moved to Trash, \(realFailures.count) failed",
+        isSuccess: false
+      )
+    }
+
     trashQueueTrashIntent = nil
+  }
+
+  private func trashToastView(_ toast: TrashToast) -> some View {
+    let color: Color = toast.isSuccess ? .green : .orange
+    return HStack(spacing: 8) {
+      Image(systemName: toast.isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(color)
+
+      Text(toast.message)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+    }
+    .padding(.horizontal, 14)
+    .padding(.vertical, 10)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(AppTheme.Colors.surface)
+        .overlay(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(color.opacity(0.4), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 4)
+    )
+    .padding(.top, 8)
   }
 
   private var sessionHeader: some View {
