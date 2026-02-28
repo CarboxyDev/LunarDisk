@@ -163,7 +163,7 @@ public actor DirectoryScanner: FileScanning {
         name: name,
         path: url.path,
         isDirectory: true,
-        sizeBytes: try recursiveDirectorySize(at: url, sizeStrategy: sizeStrategy),
+        sizeBytes: try collapsedDirectorySize(at: url, sizeStrategy: sizeStrategy),
         children: []
       )
     }
@@ -238,7 +238,7 @@ public actor DirectoryScanner: FileScanning {
     )
   }
 
-  private func recursiveDirectorySize(at url: URL, sizeStrategy: ScanSizeStrategy) throws -> Int64 {
+  private func collapsedDirectorySize(at url: URL, sizeStrategy: ScanSizeStrategy) throws -> Int64 {
     do {
       try Task.checkCancellation()
       let childURLs = try fileManager.contentsOfDirectory(
@@ -264,7 +264,7 @@ public actor DirectoryScanner: FileScanning {
         }
         if values.isDirectory == true {
           do {
-            total += try recursiveDirectorySize(at: childURL, sizeStrategy: sizeStrategy)
+            total += try collapsedDirectorySize(at: childURL, sizeStrategy: sizeStrategy)
           } catch {
             if shouldSkip(error: error) {
               noteSkipped(path: skippedPath(from: error, fallbackPath: childURL.path))
@@ -274,7 +274,11 @@ public actor DirectoryScanner: FileScanning {
           }
           continue
         }
-        total += fileSize(from: values, strategy: sizeStrategy)
+        let size = fileSize(from: values, strategy: sizeStrategy)
+        total += size
+        progressItemCount += 1
+        progressBytesScanned += size
+        reportProgressIfNeeded(currentDirectory: url.path)
       }
       return total
     } catch is CancellationError {

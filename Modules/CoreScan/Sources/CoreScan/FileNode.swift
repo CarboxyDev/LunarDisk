@@ -1,11 +1,12 @@
 import Foundation
 
-public struct FileNode: Identifiable, Hashable, Sendable {
+public struct FileNode: Identifiable, Sendable {
   public let name: String
   public let path: String
   public let isDirectory: Bool
   public let sizeBytes: Int64
   public let children: [FileNode]
+  public let sortedChildrenBySize: [FileNode]
 
   public var id: String { path }
 
@@ -21,12 +22,7 @@ public struct FileNode: Identifiable, Hashable, Sendable {
     self.isDirectory = isDirectory
     self.sizeBytes = sizeBytes
     self.children = children
-  }
-}
-
-public extension FileNode {
-  var sortedChildrenBySize: [FileNode] {
-    children.sorted { lhs, rhs in
+    self.sortedChildrenBySize = children.sorted { lhs, rhs in
       if lhs.sizeBytes != rhs.sizeBytes {
         return lhs.sizeBytes > rhs.sizeBytes
       }
@@ -35,5 +31,25 @@ public extension FileNode {
       }
       return lhs.path < rhs.path
     }
+  }
+}
+
+extension FileNode: Equatable {
+  public static func == (lhs: FileNode, rhs: FileNode) -> Bool {
+    lhs.path == rhs.path
+      && lhs.name == rhs.name
+      && lhs.isDirectory == rhs.isDirectory
+      && lhs.sizeBytes == rhs.sizeBytes
+      && lhs.children == rhs.children
+  }
+}
+
+extension FileNode: Hashable {
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(path)
+    hasher.combine(name)
+    hasher.combine(isDirectory)
+    hasher.combine(sizeBytes)
+    hasher.combine(children)
   }
 }
