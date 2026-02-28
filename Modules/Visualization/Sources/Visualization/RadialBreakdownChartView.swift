@@ -3,94 +3,44 @@ import CoreScan
 import QuartzCore
 import SwiftUI
 
-public struct RadialBreakdownChartView: View {
-  private struct ChartMetrics {
-    let center: CGPoint
-    let chartRadius: CGFloat
-    let donutRadius: CGFloat
-    let ringBandWidth: CGFloat
-    let drawingRect: CGRect
-
-    func ringBounds(for depth: Int) -> (inner: CGFloat, outer: CGFloat) {
-      let inner = donutRadius + (CGFloat(depth - 1) * ringBandWidth) + 2
-      let outer = donutRadius + (CGFloat(depth) * ringBandWidth) - 2
-      return (inner, max(inner + 0.8, outer))
-    }
-  }
-
-  private struct LayoutFidelityConfig: Equatable {
-    let maxDepth: Int
-    let maxChildrenPerNode: Int
-    let minVisibleFraction: Double
-    let maxArcCount: Int
-  }
-
-  private struct InteractionFidelityConfig {
-    let hoverSamplingInterval: CFTimeInterval
-    let hoverSnapshotDelayNanoseconds: UInt64
-    let hoverClearDelayNanoseconds: UInt64
-    let showsHoverOutline: Bool
-    let allowsHoverAnimation: Bool
-    let allowsMajorArcLift: Bool
-  }
-
-  private static let defaultPalette: [Color] = [
-    Color(red: 78 / 255, green: 168 / 255, blue: 230 / 255),
-    Color(red: 104 / 255, green: 205 / 255, blue: 176 / 255),
-    Color(red: 214 / 255, green: 144 / 255, blue: 88 / 255),
-    Color(red: 184 / 255, green: 129 / 255, blue: 203 / 255),
-    Color(red: 195 / 255, green: 171 / 255, blue: 90 / 255),
-  ]
+final class RadialBreakdownChartData {
+  let rootSizeBytes: Int64
+  let rootArcID: String
+  let nonRootArcs: [RadialBreakdownArc]
+  let arcsByDepth: [Int: [RadialBreakdownArc]]
+  let arcsByID: [String: RadialBreakdownArc]
+  let parentIDsByID: [String: String?]
+  let childrenByParentID: [String: [RadialBreakdownArc]]
+  let baseColorByArcID: [String: Color]
+  let inspectorSnapshotByArcID: [String: RadialBreakdownInspectorSnapshot]
+  let palette: [Color]
+  let maxDepth: Int
+  let majorArcIDsForHoverLift: Set<String>
+  let interactionFidelity: RadialBreakdownChartView.InteractionFidelityConfig
 
   private static let inspectorRowCapacity = 6
   private static let majorLiftShareThreshold: Double = 0.02
   private static let majorLiftAngularSpanThreshold: Double = .pi / 14
   private static let majorLiftMaxDepth = 2
-  private let rootSizeBytes: Int64
-  private let rootArcID: String
-  private let nonRootArcs: [RadialBreakdownArc]
-  private let arcsByDepth: [Int: [RadialBreakdownArc]]
-  private let arcsByID: [String: RadialBreakdownArc]
-  private let parentIDsByID: [String: String?]
-  private let childrenByParentID: [String: [RadialBreakdownArc]]
-  private let baseColorByArcID: [String: Color]
-  private let inspectorSnapshotByArcID: [String: RadialBreakdownInspectorSnapshot]
-  private let palette: [Color]
-  private let maxDepth: Int
-  private let onPathActivated: ((String) -> Void)?
-  private let pinnedArcID: String?
-  private let interactionFidelity: InteractionFidelityConfig
-  private let majorArcIDsForHoverLift: Set<String>
-  private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
-  private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
 
-  @State private var hoveredArcID: String?
-  @State private var renderedHoverArcID: String?
-  @State private var hoverPresentationProgress: CGFloat = 0
-  @State private var lastHoverUpdateTimestamp: CFTimeInterval = 0
-  @State private var hoverSnapshotTask: Task<Void, Never>?
-  @State private var hoverClearTask: Task<Void, Never>?
-  @State private var hoverPresentationResetTask: Task<Void, Never>?
-  @State private var hoverPresentationAnimationTask: Task<Void, Never>?
-
-  public init(root: FileNode) {
-    self.init(root: root, palette: Self.defaultPalette, onPathActivated: nil)
-  }
-
-  public init(
+  init(
     root: FileNode,
     palette: [Color],
-    maxDepth: Int = 4,
-    maxChildrenPerNode: Int = 12,
-    minVisibleFraction: Double = 0.012,
-    maxArcCount: Int = 2_000,
-    adaptiveFidelity: Bool = true,
-    onPathActivated: ((String) -> Void)? = nil,
-    pinnedArcID: String? = nil,
-    onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil,
-    onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil
+    maxDepth: Int,
+    maxChildrenPerNode: Int,
+    minVisibleFraction: Double,
+    maxArcCount: Int,
+    adaptiveFidelity: Bool
   ) {
-    let requestedConfig = LayoutFidelityConfig(
+    let defaultPalette: [Color] = [
+      Color(red: 78 / 255, green: 168 / 255, blue: 230 / 255),
+      Color(red: 104 / 255, green: 205 / 255, blue: 176 / 255),
+      Color(red: 214 / 255, green: 144 / 255, blue: 88 / 255),
+      Color(red: 184 / 255, green: 129 / 255, blue: 203 / 255),
+      Color(red: 195 / 255, green: 171 / 255, blue: 90 / 255),
+    ]
+
+    let requestedConfig = RadialBreakdownChartView.LayoutFidelityConfig(
       maxDepth: maxDepth,
       maxChildrenPerNode: maxChildrenPerNode,
       minVisibleFraction: minVisibleFraction,
@@ -106,7 +56,7 @@ public struct RadialBreakdownChartView: View {
     )
 
     if adaptiveFidelity {
-      let adaptedConfig = Self.adaptedFidelityConfig(
+      let adaptedConfig = RadialBreakdownChartView.adaptedFidelityConfig(
         for: root,
         requested: requestedConfig,
         realizedArcCount: arcs.count
@@ -123,7 +73,7 @@ public struct RadialBreakdownChartView: View {
     }
 
     let nonRootArcs = arcs.filter { $0.depth > 0 }
-    let interactionFidelity = Self.interactionFidelityConfig(forArcCount: nonRootArcs.count)
+    let interactionFidelity = RadialBreakdownChartView.interactionFidelityConfig(forArcCount: nonRootArcs.count)
     var majorArcIDsForHoverLift: Set<String> = []
     if interactionFidelity.allowsMajorArcLift {
       let safeRootSize = Double(max(root.sizeBytes, 1))
@@ -164,10 +114,10 @@ public struct RadialBreakdownChartView: View {
         return lhs.label < rhs.label
       }
     }
-    let resolvedPalette = palette.isEmpty ? Self.defaultPalette : palette
+    let resolvedPalette = palette.isEmpty ? defaultPalette : palette
     var cachedBaseColors: [String: Color] = [:]
     for arc in nonRootArcs {
-      cachedBaseColors[arc.id] = Self.makeBaseColor(for: arc, palette: resolvedPalette)
+      cachedBaseColors[arc.id] = RadialBreakdownChartView.makeBaseColor(for: arc, palette: resolvedPalette)
     }
 
     let safeRootSize = max(root.sizeBytes, 1)
@@ -190,9 +140,9 @@ public struct RadialBreakdownChartView: View {
         snapshotChildren = Array(children.prefix(Self.inspectorRowCapacity)).map { childArc in
           RadialBreakdownInspectorChild(
             id: childArc.id,
-            label: Self.label(for: childArc),
+            label: RadialBreakdownChartView.label(for: childArc),
             sizeBytes: childArc.sizeBytes,
-            symbolName: Self.symbolName(for: childArc),
+            symbolName: RadialBreakdownChartView.symbolName(for: childArc),
             isMuted: false
           )
         }
@@ -200,11 +150,11 @@ public struct RadialBreakdownChartView: View {
 
       cachedInspectorSnapshots[arc.id] = RadialBreakdownInspectorSnapshot(
         id: arc.id,
-        label: Self.label(for: arc),
+        label: RadialBreakdownChartView.label(for: arc),
         path: arc.path,
         sizeBytes: arc.sizeBytes,
         shareOfRoot: max(0, min(1, Double(arc.sizeBytes) / Double(safeRootSize))),
-        symbolName: Self.symbolName(for: arc),
+        symbolName: RadialBreakdownChartView.symbolName(for: arc),
         isDirectory: arc.isDirectory,
         isAggregate: arc.isAggregate,
         children: snapshotChildren
@@ -222,10 +172,93 @@ public struct RadialBreakdownChartView: View {
     self.inspectorSnapshotByArcID = cachedInspectorSnapshots
     self.palette = resolvedPalette
     self.maxDepth = max(arcs.map(\.depth).max() ?? 1, 1)
-    self.onPathActivated = onPathActivated
-    self.pinnedArcID = pinnedArcID
     self.interactionFidelity = interactionFidelity
     self.majorArcIDsForHoverLift = majorArcIDsForHoverLift
+  }
+}
+
+public struct RadialBreakdownChartView: View {
+  private struct ChartMetrics {
+    let center: CGPoint
+    let chartRadius: CGFloat
+    let donutRadius: CGFloat
+    let ringBandWidth: CGFloat
+    let drawingRect: CGRect
+
+    func ringBounds(for depth: Int) -> (inner: CGFloat, outer: CGFloat) {
+      let inner = donutRadius + (CGFloat(depth - 1) * ringBandWidth) + 2
+      let outer = donutRadius + (CGFloat(depth) * ringBandWidth) - 2
+      return (inner, max(inner + 0.8, outer))
+    }
+  }
+
+  fileprivate struct LayoutFidelityConfig: Equatable {
+    let maxDepth: Int
+    let maxChildrenPerNode: Int
+    let minVisibleFraction: Double
+    let maxArcCount: Int
+  }
+
+  fileprivate struct InteractionFidelityConfig {
+    let hoverSamplingInterval: CFTimeInterval
+    let hoverSnapshotDelayNanoseconds: UInt64
+    let hoverClearDelayNanoseconds: UInt64
+    let showsHoverOutline: Bool
+    let allowsHoverAnimation: Bool
+    let allowsMajorArcLift: Bool
+  }
+
+  private static let defaultPalette: [Color] = [
+    Color(red: 78 / 255, green: 168 / 255, blue: 230 / 255),
+    Color(red: 104 / 255, green: 205 / 255, blue: 176 / 255),
+    Color(red: 214 / 255, green: 144 / 255, blue: 88 / 255),
+    Color(red: 184 / 255, green: 129 / 255, blue: 203 / 255),
+    Color(red: 195 / 255, green: 171 / 255, blue: 90 / 255),
+  ]
+
+  private let chartData: RadialBreakdownChartData
+  private let onPathActivated: ((String) -> Void)?
+  private let pinnedArcID: String?
+  private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
+  private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
+
+  @State private var hoveredArcID: String?
+  @State private var renderedHoverArcID: String?
+  @State private var hoverPresentationProgress: CGFloat = 0
+  @State private var lastHoverUpdateTimestamp: CFTimeInterval = 0
+  @State private var hoverSnapshotTask: Task<Void, Never>?
+  @State private var hoverClearTask: Task<Void, Never>?
+  @State private var hoverPresentationResetTask: Task<Void, Never>?
+  @State private var hoverPresentationAnimationTask: Task<Void, Never>?
+
+  public init(root: FileNode) {
+    self.init(root: root, palette: Self.defaultPalette, onPathActivated: nil)
+  }
+
+  public init(
+    root: FileNode,
+    palette: [Color],
+    maxDepth: Int = 4,
+    maxChildrenPerNode: Int = 12,
+    minVisibleFraction: Double = 0.012,
+    maxArcCount: Int = 2_000,
+    adaptiveFidelity: Bool = true,
+    onPathActivated: ((String) -> Void)? = nil,
+    pinnedArcID: String? = nil,
+    onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil,
+    onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil
+  ) {
+    self.chartData = RadialBreakdownChartData(
+      root: root,
+      palette: palette,
+      maxDepth: maxDepth,
+      maxChildrenPerNode: maxChildrenPerNode,
+      minVisibleFraction: minVisibleFraction,
+      maxArcCount: maxArcCount,
+      adaptiveFidelity: adaptiveFidelity
+    )
+    self.onPathActivated = onPathActivated
+    self.pinnedArcID = pinnedArcID
     self.onHoverSnapshotChanged = onHoverSnapshotChanged
     self.onRootSnapshotReady = onRootSnapshotReady
   }
@@ -236,7 +269,7 @@ public struct RadialBreakdownChartView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .clipped()
       .onAppear {
-        onRootSnapshotReady?(makeInspectorSnapshot(forArcID: rootArcID))
+        onRootSnapshotReady?(makeInspectorSnapshot(forArcID: chartData.rootArcID))
         onHoverSnapshotChanged?(nil)
       }
       .onChange(of: hoveredArcID) { oldHoveredArcID, newHoveredArcID in
@@ -245,7 +278,7 @@ public struct RadialBreakdownChartView: View {
         hoverPresentationResetTask?.cancel()
         hoverPresentationAnimationTask?.cancel()
 
-        if interactionFidelity.allowsHoverAnimation {
+        if chartData.interactionFidelity.allowsHoverAnimation {
           switch (oldHoveredArcID, newHoveredArcID) {
           case (nil, let next?) where !next.isEmpty:
             renderedHoverArcID = next
@@ -279,7 +312,7 @@ public struct RadialBreakdownChartView: View {
         }
 
         hoverSnapshotTask = Task { @MainActor in
-          try? await Task.sleep(nanoseconds: interactionFidelity.hoverSnapshotDelayNanoseconds)
+          try? await Task.sleep(nanoseconds: chartData.interactionFidelity.hoverSnapshotDelayNanoseconds)
           guard !Task.isCancelled else { return }
           onHoverSnapshotChanged?(makeInspectorSnapshot(forArcID: newHoveredArcID))
         }
@@ -306,7 +339,7 @@ public struct RadialBreakdownChartView: View {
 
       ZStack {
         Canvas { context, _ in
-          for arc in nonRootArcs {
+          for arc in chartData.nonRootArcs {
             drawArc(
               arc,
               using: metrics,
@@ -329,7 +362,7 @@ public struct RadialBreakdownChartView: View {
               guard hitArcID != hoveredArcID else { return }
 
               let now = CACurrentMediaTime()
-              if now - lastHoverUpdateTimestamp < interactionFidelity.hoverSamplingInterval {
+              if now - lastHoverUpdateTimestamp < chartData.interactionFidelity.hoverSamplingInterval {
                 return
               }
 
@@ -337,7 +370,7 @@ public struct RadialBreakdownChartView: View {
               lastHoverUpdateTimestamp = now
             } else if hoveredArcID != nil, hoverClearTask == nil {
               hoverClearTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: interactionFidelity.hoverClearDelayNanoseconds)
+                try? await Task.sleep(nanoseconds: chartData.interactionFidelity.hoverClearDelayNanoseconds)
                 guard !Task.isCancelled else { return }
                 guard hoveredArcID != nil else { return }
                 hoveredArcID = nil
@@ -377,7 +410,7 @@ public struct RadialBreakdownChartView: View {
     guard let arcID else {
       return nil
     }
-    return inspectorSnapshotByArcID[arcID]
+    return chartData.inspectorSnapshotByArcID[arcID]
   }
 
   private func chartMetrics(in size: CGSize) -> ChartMetrics {
@@ -394,7 +427,7 @@ public struct RadialBreakdownChartView: View {
     let chartRadius = diameter / 2
     let center = CGPoint(x: drawingRect.midX, y: drawingRect.midY)
     let donutRadius = max(chartRadius * 0.25, 34)
-    let ringBandWidth = max((chartRadius - donutRadius) / CGFloat(maxDepth), 5)
+    let ringBandWidth = max((chartRadius - donutRadius) / CGFloat(chartData.maxDepth), 5)
 
     return ChartMetrics(
       center: center,
@@ -416,7 +449,7 @@ public struct RadialBreakdownChartView: View {
 
     let angle = normalizedAngle(from: atan2(dy, dx))
     for depth in hitTestDepthCandidates(for: radius, metrics: metrics) {
-      guard let depthArcs = arcsByDepth[depth] else { continue }
+      guard let depthArcs = chartData.arcsByDepth[depth] else { continue }
       guard let arc = arc(at: angle, in: depthArcs) else { continue }
       let ringBounds = metrics.ringBounds(for: arc.depth)
       guard radius >= ringBounds.inner, radius <= ringBounds.outer else { continue }
@@ -438,8 +471,8 @@ public struct RadialBreakdownChartView: View {
     let isSelected = activeArcID == arc.id
     let isHovered = hoveredArcID == arc.id
     let hoverProgress = min(max(hoverPresentationProgress, 0), 1)
-    let usesStrongHoverPresentation = interactionFidelity.showsHoverOutline && isHovered && !isSelected
-    let shouldLiftHoveredArc = usesStrongHoverPresentation && majorArcIDsForHoverLift.contains(arc.id)
+    let usesStrongHoverPresentation = chartData.interactionFidelity.showsHoverOutline && isHovered && !isSelected
+    let shouldLiftHoveredArc = usesStrongHoverPresentation && chartData.majorArcIDsForHoverLift.contains(arc.id)
 
     var ringBounds = metrics.ringBounds(for: arc.depth)
     if usesStrongHoverPresentation {
@@ -534,7 +567,7 @@ public struct RadialBreakdownChartView: View {
     hoveredArcID: String?,
     hoverPresentationProgress: CGFloat
   ) -> Color {
-    let base = baseColorByArcID[arc.id] ?? Self.makeBaseColor(for: arc, palette: palette)
+    let base = chartData.baseColorByArcID[arc.id] ?? Self.makeBaseColor(for: arc, palette: chartData.palette)
     let depthOpacity = max(0.62, 0.94 - (Double(max(arc.depth - 1, 0)) * 0.08))
     let opacity: Double
     let clampedHoverProgress = Double(min(max(hoverPresentationProgress, 0), 1))
@@ -560,7 +593,7 @@ public struct RadialBreakdownChartView: View {
     return base.opacity(opacity)
   }
 
-  private static func makeBaseColor(for arc: RadialBreakdownArc, palette: [Color]) -> Color {
+  fileprivate static func makeBaseColor(for arc: RadialBreakdownArc, palette: [Color]) -> Color {
     if arc.isAggregate {
       return Color.gray
     }
@@ -586,7 +619,7 @@ public struct RadialBreakdownChartView: View {
     return hash
   }
 
-  private static func adaptedFidelityConfig(
+  fileprivate static func adaptedFidelityConfig(
     for root: FileNode,
     requested: LayoutFidelityConfig,
     realizedArcCount: Int
@@ -616,7 +649,7 @@ public struct RadialBreakdownChartView: View {
     return adapted
   }
 
-  private static func interactionFidelityConfig(forArcCount arcCount: Int) -> InteractionFidelityConfig {
+  fileprivate static func interactionFidelityConfig(forArcCount arcCount: Int) -> InteractionFidelityConfig {
     if arcCount >= 620 {
       return InteractionFidelityConfig(
         hoverSamplingInterval: 1.0 / 24.0,
@@ -685,20 +718,20 @@ public struct RadialBreakdownChartView: View {
 
   private func relatedArcIDs(for activeArcID: String?) -> Set<String>? {
     guard let activeArcID else { return nil }
-    guard arcsByID[activeArcID] != nil else { return nil }
+    guard chartData.arcsByID[activeArcID] != nil else { return nil }
 
     var related: Set<String> = [activeArcID]
 
-    var parentCursor = parentIDsByID[activeArcID] ?? nil
+    var parentCursor = chartData.parentIDsByID[activeArcID] ?? nil
     while let parent = parentCursor {
       related.insert(parent)
-      parentCursor = parentIDsByID[parent] ?? nil
+      parentCursor = chartData.parentIDsByID[parent] ?? nil
     }
 
-    var childStack: [RadialBreakdownArc] = childrenByParentID[activeArcID] ?? []
+    var childStack: [RadialBreakdownArc] = chartData.childrenByParentID[activeArcID] ?? []
     while let child = childStack.popLast() {
       related.insert(child.id)
-      if let grandchildren = childrenByParentID[child.id] {
+      if let grandchildren = chartData.childrenByParentID[child.id] {
         childStack.append(contentsOf: grandchildren)
       }
     }
@@ -713,7 +746,7 @@ public struct RadialBreakdownChartView: View {
     var ordered: [Int] = []
     ordered.reserveCapacity(3)
 
-    for depth in candidates where depth >= 1 && depth <= maxDepth {
+    for depth in candidates where depth >= 1 && depth <= chartData.maxDepth {
       if !ordered.contains(depth) {
         ordered.append(depth)
       }
@@ -744,7 +777,7 @@ public struct RadialBreakdownChartView: View {
   @ViewBuilder
   private func totalBadge(using metrics: ChartMetrics) -> some View {
     let donutDiameter = min(metrics.donutRadius * 1.84, metrics.chartRadius * 1.4)
-    let sizeParts = formattedSizeParts(for: rootSizeBytes)
+    let sizeParts = formattedSizeParts(for: chartData.rootSizeBytes)
 
     VStack(spacing: 4) {
       Text(sizeParts.value)
@@ -787,7 +820,7 @@ public struct RadialBreakdownChartView: View {
     return (value: value, unit: unit.isEmpty ? nil : unit)
   }
 
-  private static func symbolName(for arc: RadialBreakdownArc) -> String {
+  fileprivate static func symbolName(for arc: RadialBreakdownArc) -> String {
     if arc.isAggregate {
       return "ellipsis.circle.fill"
     }
@@ -818,7 +851,7 @@ public struct RadialBreakdownChartView: View {
     }
   }
 
-  private static func label(for arc: RadialBreakdownArc) -> String {
+  fileprivate static func label(for arc: RadialBreakdownArc) -> String {
     if arc.isAggregate {
       return "Smaller objects..."
     }
