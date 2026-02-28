@@ -14,6 +14,16 @@ final class AppModel: ObservableObject {
     case unknown(message: String)
   }
 
+  struct VolumeCapacity {
+    let totalBytes: Int64
+    let availableBytes: Int64
+    let availableForImportantUseBytes: Int64
+
+    var purgeableBytes: Int64 {
+      max(0, availableForImportantUseBytes - availableBytes)
+    }
+  }
+
   @Published var selectedURL: URL?
   @Published var rootNode: FileNode?
   @Published var insights: [Insight] = []
@@ -24,6 +34,7 @@ final class AppModel: ObservableObject {
   @Published var scanProgress: ScanProgress?
   @Published var lastScanSummary: ScanSummary?
   @Published var previousSummaryForTarget: ScanSummary?
+  @Published var volumeCapacity: VolumeCapacity?
   // Internal-only toggle for scan sizing semantics until we add an advanced settings UI.
   var scanSizeStrategy: ScanSizeStrategy = .allocated
 
@@ -57,6 +68,7 @@ final class AppModel: ObservableObject {
     errorMessage = nil
     lastFailure = nil
     scanWarningMessage = nil
+    volumeCapacity = url.flatMap { Self.fetchVolumeCapacity(for: $0) }
   }
 
   func scanMacintoshHD() {
@@ -203,6 +215,26 @@ final class AppModel: ObservableObject {
       return true
     }
     return false
+  }
+
+  private static func fetchVolumeCapacity(for url: URL) -> VolumeCapacity? {
+    let keys: Set<URLResourceKey> = [
+      .volumeTotalCapacityKey,
+      .volumeAvailableCapacityKey,
+      .volumeAvailableCapacityForImportantUsageKey
+    ]
+    guard let values = try? url.resourceValues(forKeys: keys),
+          let total = values.volumeTotalCapacity,
+          let available = values.volumeAvailableCapacity,
+          let availableImportant = values.volumeAvailableCapacityForImportantUsage
+    else {
+      return nil
+    }
+    return VolumeCapacity(
+      totalBytes: Int64(total),
+      availableBytes: Int64(available),
+      availableForImportantUseBytes: Int64(availableImportant)
+    )
   }
 
   private static func warningMessage(from diagnostics: ScanDiagnostics?) -> String? {

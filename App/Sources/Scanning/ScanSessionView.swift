@@ -195,6 +195,7 @@ struct ScanSessionView: View {
   let onOpenFullDiskAccess: () -> Void
   let previousSummary: ScanSummary?
   let onRevealInFinder: (String) -> Void
+  let volumeCapacity: AppModel.VolumeCapacity?
 
   @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
   @State private var selectedSection: SessionSection = .overview
@@ -411,6 +412,10 @@ struct ScanSessionView: View {
           deltaBadge
         }
 
+        if let capacityBadge = volumeCapacityBadge {
+          capacityBadge
+        }
+
         Spacer(minLength: 0)
 
         Button("New Scan") {
@@ -474,6 +479,35 @@ struct ScanSessionView: View {
             )
         )
       }
+    }
+  }
+
+  @ViewBuilder
+  private var volumeCapacityBadge: (some View)? {
+    if let cap = volumeCapacity, !isScanning {
+      let purgeableBytes = cap.purgeableBytes
+      let totalLabel = ByteFormatter.string(from: cap.totalBytes)
+      let purgeableLabel = ByteFormatter.string(from: purgeableBytes)
+      let helpText = "Total volume: \(totalLabel) · Available: \(ByteFormatter.string(from: cap.availableBytes)) · Purgeable: \(purgeableLabel) (auto-managed by macOS)"
+
+      HStack(spacing: 5) {
+        Image(systemName: "internaldrive")
+          .font(.system(size: 10, weight: .semibold))
+        Text("\(totalLabel) disk\(purgeableBytes > 0 ? " · ~\(purgeableLabel) purgeable" : "")")
+          .font(.system(size: 11, weight: .semibold))
+      }
+      .foregroundStyle(AppTheme.Colors.textSecondary)
+      .padding(.horizontal, 9)
+      .padding(.vertical, 5)
+      .background(
+        Capsule(style: .continuous)
+          .fill(AppTheme.Colors.statusIdleBackground)
+          .overlay(
+            Capsule(style: .continuous)
+              .stroke(AppTheme.Colors.cardBorder, lineWidth: 1)
+          )
+      )
+      .help(helpText)
     }
   }
 
@@ -584,12 +618,13 @@ struct ScanSessionView: View {
       Text("Target: \(targetDisplayPath)")
         .lineLimit(1)
         .truncationMode(.middle)
+        .frame(maxWidth: Layout.targetBadgeMaxWidth, alignment: .leading)
     } icon: {
       Image(systemName: "scope")
     }
     .font(.system(size: 12, weight: .medium))
     .foregroundStyle(AppTheme.Colors.textSecondary)
-    .frame(maxWidth: Layout.targetBadgeMaxWidth, alignment: .leading)
+    .fixedSize()
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
     .background(
