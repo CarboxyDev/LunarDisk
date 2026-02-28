@@ -140,13 +140,19 @@ enum FileActionService {
   }
 
   static func moveToTrash(items: [(path: String, estimatedBytes: Int64?)]) -> FileActionBatchReport {
-    let normalized = dedupedPaths(items.map(\.path))
-    let bytesByPath = Dictionary(uniqueKeysWithValues: items.map { ($0.path, $0.estimatedBytes ?? 0) })
+    let canonicalized = items.map { (path: URL(fileURLWithPath: $0.path).standardized.path, estimatedBytes: $0.estimatedBytes) }
+    let normalized = dedupedPaths(canonicalized.map(\.path))
+    let bytesByPath = Dictionary(canonicalized.map { ($0.path, $0.estimatedBytes ?? 0) }, uniquingKeysWith: { first, _ in first })
 
     var results: [FileActionResult] = []
     var processedBytes = Int64(0)
 
     for path in normalized {
+      if isBlockedSystemPath(path) {
+        results.append(FileActionResult(kind: .moveToTrash, path: path, outcome: .failed(message: "Refusing to trash system-critical path.")))
+        continue
+      }
+
       guard FileManager.default.fileExists(atPath: path) else {
         results.append(FileActionResult(kind: .moveToTrash, path: path, outcome: .missing))
         continue
@@ -163,6 +169,21 @@ enum FileActionService {
     }
 
     return summarize(kind: .moveToTrash, results: results, processedBytes: processedBytes)
+  }
+
+  private static let blockedPrefixes = [
+    "/System", "/usr", "/bin", "/sbin",
+    "/private/etc", "/private/var/db",
+    "/Library/Keychains"
+  ]
+
+  private static func isBlockedSystemPath(_ path: String) -> Bool {
+    for prefix in blockedPrefixes {
+      if path == prefix || path.hasPrefix(prefix + "/") {
+        return true
+      }
+    }
+    return false
   }
 
   private static func summarize(
@@ -219,16 +240,31 @@ enum FileActionService {
 
   private static func dedupedPaths(_ input: [String]) -> [String] {
     var seen = Set<String>()
-    var output: [String] = []
-    output.reserveCapacity(input.count)
+    var unique: [String] = []
+    unique.reserveCapacity(input.count)
 
     for path in input where !path.isEmpty {
       if seen.insert(path).inserted {
-        output.append(path)
+        unique.append(path)
       }
     }
 
-    return output
+    // Sort shortest-first so ancestors come before descendants.
+    let sorted = unique.sorted { $0.count < $1.count }
+    var kept: [String] = []
+    kept.reserveCapacity(sorted.count)
+
+    for path in sorted {
+      let isDescendant = kept.contains { ancestor in
+        let prefix = ancestor.hasSuffix("/") ? ancestor : ancestor + "/"
+        return path.hasPrefix(prefix)
+      }
+      if !isDescendant {
+        kept.append(path)
+      }
+    }
+
+    return kept
   }
 }
 
