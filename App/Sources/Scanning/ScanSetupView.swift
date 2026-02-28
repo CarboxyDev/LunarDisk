@@ -1,3 +1,4 @@
+import CoreScan
 import SwiftUI
 
 struct ScanSetupView: View {
@@ -19,15 +20,18 @@ struct ScanSetupView: View {
   let selectedFolderPath: String?
   let canStartFolderScan: Bool
   let lastFailure: AppModel.ScanFailure?
+  let recentScans: [ScanSummary]
   let onScanMacintoshHD: () -> Void
   let onChooseFolder: () -> Void
   let onStartFolderScan: () -> Void
   let onOpenFullDiskAccess: () -> Void
+  let onSelectRecentScan: (String) -> Void
 
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
   @State private var revealHeader = false
   @State private var revealPrimaryCard = false
   @State private var revealSupportCard = false
+  @State private var revealRecentScans = false
 
   private var hasSelectedFolder: Bool {
     selectedFolderPath != nil
@@ -56,11 +60,18 @@ struct ScanSetupView: View {
       permissionsAndPrivacyCard
         .opacity(revealSupportCard ? 1 : 0)
         .offset(y: revealSupportCard ? 0 : Layout.entranceOffsetCard)
+
+      if !recentScans.isEmpty {
+        recentScansCard
+          .opacity(revealRecentScans ? 1 : 0)
+          .offset(y: revealRecentScans ? 0 : Layout.entranceOffsetCard)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .animation(entranceAnimation, value: revealHeader)
     .animation(entranceAnimation, value: revealPrimaryCard)
     .animation(entranceAnimation, value: revealSupportCard)
+    .animation(entranceAnimation, value: revealRecentScans)
     .onAppear {
       animateEntranceIfNeeded()
     }
@@ -236,6 +247,7 @@ struct ScanSetupView: View {
       revealHeader = true
       revealPrimaryCard = true
       revealSupportCard = true
+      revealRecentScans = true
       return
     }
 
@@ -245,7 +257,76 @@ struct ScanSetupView: View {
       revealPrimaryCard = true
       try? await Task.sleep(nanoseconds: 85_000_000)
       revealSupportCard = true
+      try? await Task.sleep(nanoseconds: 85_000_000)
+      revealRecentScans = true
     }
+  }
+
+  private var recentScansCard: some View {
+    VStack(alignment: .leading, spacing: Layout.standardCardSpacing) {
+      HStack(alignment: .center, spacing: 8) {
+        Image(systemName: "clock.arrow.circlepath")
+          .font(AppTheme.Typography.captionStrong)
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+
+        Text("Recent Scans")
+          .font(AppTheme.Typography.sectionHeader)
+          .foregroundStyle(AppTheme.Colors.textPrimary)
+      }
+
+      VStack(spacing: 0) {
+        ForEach(recentScans) { scan in
+          recentScanRow(scan)
+
+          if scan.id != recentScans.last?.id {
+            Divider()
+              .overlay(AppTheme.Colors.divider)
+          }
+        }
+      }
+    }
+    .lunarSetupCard(padding: Layout.cardPadding)
+  }
+
+  private func recentScanRow(_ scan: ScanSummary) -> some View {
+    Button {
+      onSelectRecentScan(scan.targetPath)
+    } label: {
+      HStack(spacing: 10) {
+        Image(systemName: scan.targetPath == "/" ? "internaldrive.fill" : "folder.fill")
+          .font(AppTheme.Typography.captionStrong)
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+          .frame(width: 20)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(scan.targetPath == "/" ? "Macintosh HD" : scan.targetPath)
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+
+          Text(relativeDate(scan.timestamp))
+            .font(AppTheme.Typography.micro)
+            .foregroundStyle(AppTheme.Colors.textTertiary)
+        }
+
+        Spacer(minLength: 4)
+
+        Text(ByteFormatter.string(from: scan.totalSizeBytes))
+          .font(AppTheme.Typography.captionStrong)
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+      }
+      .padding(.vertical, 8)
+      .padding(.horizontal, 4)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func relativeDate(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .full
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 
   private func failureBanner(_ failure: AppModel.ScanFailure) -> some View {

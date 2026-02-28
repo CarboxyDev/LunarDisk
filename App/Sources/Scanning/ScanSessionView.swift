@@ -193,6 +193,7 @@ struct ScanSessionView: View {
   let onRetryScan: () -> Void
   let onBackToSetup: () -> Void
   let onOpenFullDiskAccess: () -> Void
+  let previousSummary: ScanSummary?
   let onRevealInFinder: (String) -> Void
 
   @State private var distributionSectionHeights: [ResultsLayoutVariant: CGFloat] = [:]
@@ -406,6 +407,10 @@ struct ScanSessionView: View {
       HStack(spacing: 10) {
         targetBadge
 
+        if let deltaBadge = deltaBadgeContent {
+          deltaBadge
+        }
+
         Spacer(minLength: 0)
 
         Button("New Scan") {
@@ -431,6 +436,45 @@ struct ScanSessionView: View {
     .padding(16)
     .frame(maxWidth: .infinity, alignment: .leading)
     .lunarPanelBackground()
+  }
+
+  @ViewBuilder
+  private var deltaBadgeContent: (some View)? {
+    if let rootNode, let previousSummary, !isScanning {
+      let delta = rootNode.sizeBytes - previousSummary.totalSizeBytes
+      if delta != 0 {
+        let isIncrease = delta > 0
+        let symbol = isIncrease ? "+" : "\u{2212}"
+        let label = "\(symbol)\(ByteFormatter.string(from: abs(delta))) since last scan"
+        let foreground = isIncrease
+          ? AppTheme.Colors.statusWarningForeground
+          : AppTheme.Colors.statusSuccessForeground
+        let background = isIncrease
+          ? AppTheme.Colors.statusWarningBackground
+          : AppTheme.Colors.statusSuccessBackground
+        let border = isIncrease
+          ? AppTheme.Colors.statusWarningBorder
+          : AppTheme.Colors.statusSuccessBorder
+
+        HStack(spacing: 5) {
+          Image(systemName: isIncrease ? "arrow.up.right" : "arrow.down.right")
+            .font(.system(size: 10, weight: .bold))
+          Text(label)
+            .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+          Capsule(style: .continuous)
+            .fill(background)
+            .overlay(
+              Capsule(style: .continuous)
+                .stroke(border, lineWidth: 1)
+            )
+        )
+      }
+    }
   }
 
   private var sessionSectionPicker: some View {

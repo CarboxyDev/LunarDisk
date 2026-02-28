@@ -67,10 +67,12 @@ struct RootView: View {
         selectedFolderPath: selectedFolderURL?.path,
         canStartFolderScan: model.canStartScan,
         lastFailure: model.lastFailure,
+        recentScans: ScanHistoryManager.shared.recentScans(),
         onScanMacintoshHD: startMacintoshHDScanFlow,
         onChooseFolder: chooseFolder,
         onStartFolderScan: startFolderScan,
-        onOpenFullDiskAccess: openFullDiskAccessSettings
+        onOpenFullDiskAccess: openFullDiskAccessSettings,
+        onSelectRecentScan: selectRecentScanTarget
       )
       .transition(
         .asymmetric(
@@ -93,6 +95,7 @@ struct RootView: View {
         onRetryScan: startCurrentTargetScan,
         onBackToSetup: returnToSetup,
         onOpenFullDiskAccess: openFullDiskAccessSettings,
+        previousSummary: model.previousSummaryForTarget,
         onRevealInFinder: revealInFinder(path:)
       )
       .transition(
@@ -168,6 +171,11 @@ struct RootView: View {
     if panel.runModal() == .OK {
       model.selectScanTarget(panel.url)
     }
+  }
+
+  private func selectRecentScanTarget(_ path: String) {
+    let url = URL(fileURLWithPath: path, isDirectory: true)
+    model.selectScanTarget(url)
   }
 
   private func returnToSetup() {

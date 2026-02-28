@@ -22,6 +22,8 @@ final class AppModel: ObservableObject {
   @Published var lastFailure: ScanFailure?
   @Published var scanWarningMessage: String?
   @Published var scanProgress: ScanProgress?
+  @Published var lastScanSummary: ScanSummary?
+  @Published var previousSummaryForTarget: ScanSummary?
   // Internal-only toggle for scan sizing semantics until we add an advanced settings UI.
   var scanSizeStrategy: ScanSizeStrategy = .allocated
 
@@ -134,6 +136,14 @@ final class AppModel: ObservableObject {
 
       pipelineSignposter.emitEvent("pipeline.phase", "scan complete, begin insights")
       rootNode = scannedRoot
+
+      let summary = ScanSummary.from(rootNode: scannedRoot, targetPath: url.path)
+      previousSummaryForTarget = ScanHistoryManager.shared.previousSummary(
+        for: url.path, excluding: summary.id
+      )
+      ScanHistoryManager.shared.save(summary)
+      lastScanSummary = summary
+
       let diagnostics = await scanner.lastScanDiagnostics()
       guard activeScanID == scanID else { return }
       scanWarningMessage = Self.warningMessage(from: diagnostics)
