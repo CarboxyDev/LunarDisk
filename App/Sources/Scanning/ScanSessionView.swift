@@ -53,6 +53,7 @@ private struct RadialDetailsPanelContainer: View {
   let radialState: RadialInteractionState
   let hoverState: RadialHoverState
   let targetHeight: CGFloat
+  let onRevealInFinder: (String) -> Void
 
   private var selectedDetailSnapshot: RadialBreakdownInspectorSnapshot? {
     radialState.pinnedSnapshot ?? hoverState.hoverSnapshot ?? hoverState.rootSnapshot
@@ -65,7 +66,8 @@ private struct RadialDetailsPanelContainer: View {
       onClearPinnedSelection: {
         radialState.clearPinnedSelection()
       },
-      targetHeight: targetHeight
+      targetHeight: targetHeight,
+      onRevealInFinder: onRevealInFinder
     )
   }
 }
@@ -74,9 +76,28 @@ private struct RadialDetailsPanelContainer: View {
 private struct RadialContextMenuContent: View {
   let radialState: RadialInteractionState
   let hoverState: RadialHoverState
+  let trashQueueState: TrashQueueState
+  let onRevealInFinder: (String) -> Void
 
   var body: some View {
     if let hoveredSnapshot = hoverState.hoverSnapshot {
+      if let path = hoveredSnapshot.path, !hoveredSnapshot.isAggregate {
+        let isQueued = trashQueueState.contains(path: path)
+        Button(isQueued ? "Remove from Trash Queue" : "Add to Trash Queue") {
+          if isQueued {
+            trashQueueState.remove(path: path)
+          } else {
+            trashQueueState.add(TrashQueueItem(snapshot: hoveredSnapshot))
+          }
+        }
+
+        Button("Reveal in Finder") {
+          onRevealInFinder(path)
+        }
+
+        Divider()
+      }
+
       let isAlreadyPinned = radialState.pinnedSnapshot?.id == hoveredSnapshot.id
       Button(isAlreadyPinned ? "Unpin \"\(hoveredSnapshot.label)\"" : "Pin \"\(hoveredSnapshot.label)\"") {
         if isAlreadyPinned {
@@ -86,8 +107,7 @@ private struct RadialContextMenuContent: View {
         }
       }
     } else {
-      Button("Pin Hovered Item") {}
-        .disabled(true)
+      Text("Hover over an item to see options")
     }
 
     if let pinnedSnapshot = radialState.pinnedSnapshot,
@@ -209,6 +229,9 @@ struct ScanSessionView: View {
   @State private var searchResult: FileNodeSearchResult?
   @State private var searchTask: Task<Void, Never>?
   @State private var isSearchFieldFocused = false
+  @State private var trashQueueState = TrashQueueState()
+  @State private var trashQueueTrashIntent: TrashQueueTrashIntent?
+  @State private var lastTrashQueueReport: FileActionBatchReport?
   @FocusState private var searchFieldFocused: Bool
   @Namespace private var sectionTabSelectionNamespace
 
@@ -371,6 +394,8 @@ struct ScanSessionView: View {
         selectedSection = .overview
         radialState.resetDrill(for: nil, hoverState: hoverState)
         clearSearch()
+        trashQueueState.clear()
+        lastTrashQueueReport = nil
       } else if let rootNode, radialState.drillPathStack.isEmpty {
         radialState.resetDrill(for: rootNode, hoverState: hoverState)
       }
@@ -380,10 +405,58 @@ struct ScanSessionView: View {
         selectedSection = .overview
       }
       radialState.resetDrill(for: rootNode, hoverState: hoverState)
+      trashQueueState.clear()
+      lastTrashQueueReport = nil
       clearSearch()
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
     }
+    .confirmationDialog(
+      "Move to Trash",
+      isPresented: Binding(
+        get: { trashQueueTrashIntent != nil },
+        set: { if !$0 { trashQueueTrashIntent = nil } }
+      ),
+      presenting: trashQueueTrashIntent
+    ) { intent in
+      Button("Move \(intent.actionableItems.count) Item\(intent.actionableItems.count == 1 ? "" : "s") to Trash", role: .destructive) {
+        runTrashQueue(intent)
+      }
+      Button("Cancel", role: .cancel) {
+        trashQueueTrashIntent = nil
+      }
+    } message: { intent in
+      let actionable = intent.actionableItems.count
+      let blocked = intent.blockedCount
+      let bytes = ByteFormatter.string(from: intent.estimatedBytes)
+      if blocked > 0 {
+        Text("This will move \(actionable) item\(actionable == 1 ? "" : "s") (\(bytes)) to the Trash. \(blocked) system-protected item\(blocked == 1 ? "" : "s") will be skipped.")
+      } else {
+        Text("This will move \(actionable) item\(actionable == 1 ? "" : "s") (\(bytes)) to the Trash.")
+      }
+    }
+  }
+
+  private func runTrashQueue(_ intent: TrashQueueTrashIntent) {
+    let items = intent.actionableItems.map { (path: $0.path, estimatedBytes: $0.sizeBytes as Int64?) }
+    guard !items.isEmpty else {
+      trashQueueTrashIntent = nil
+      return
+    }
+
+    let report = FileActionService.moveToTrash(items: items)
+    lastTrashQueueReport = report
+
+    let succeededPaths = Set(
+      report.results
+        .filter {
+          if case .success = $0.outcome { return true }
+          return false
+        }
+        .map(\.path)
+    )
+    trashQueueState.removeSucceeded(paths: succeededPaths)
+    trashQueueTrashIntent = nil
   }
 
   private var sessionHeader: some View {
@@ -899,41 +972,68 @@ struct ScanSessionView: View {
   }
 
   private func resultsContent(rootNode: FileNode, scanRootNode: FileNode) -> some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(alignment: .top, spacing: Layout.sectionSpacing) {
-        distributionSection(
-          rootNode: rootNode,
-          scanRootNode: scanRootNode,
-          chartHeight: Layout.chartPreferredHeightTwoColumn,
-          layoutVariant: .twoColumn
-        )
-        supplementalResultsSections(
-          rootNode: rootNode,
-          useFixedWidth: true,
-          targetHeight: distributionSectionHeights[.twoColumn] ?? 0
-        )
+    VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .top, spacing: Layout.sectionSpacing) {
+          distributionSection(
+            rootNode: rootNode,
+            scanRootNode: scanRootNode,
+            chartHeight: Layout.chartPreferredHeightTwoColumn,
+            layoutVariant: .twoColumn
+          )
+          supplementalResultsSections(
+            rootNode: rootNode,
+            useFixedWidth: true,
+            targetHeight: distributionSectionHeights[.twoColumn] ?? 0
+          )
+        }
+
+        VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+          distributionSection(
+            rootNode: rootNode,
+            scanRootNode: scanRootNode,
+            chartHeight: Layout.chartPreferredHeightSingleColumn,
+            layoutVariant: .singleColumn
+          )
+          supplementalResultsSections(
+            rootNode: rootNode,
+            useFixedWidth: false,
+            targetHeight: distributionSectionHeights[.singleColumn] ?? 0
+          )
+        }
+      }
+      .onPreferenceChange(DistributionSectionHeightsPreferenceKey.self) { heights in
+        distributionSectionHeights.merge(heights) { _, next in
+          next
+        }
       }
 
-      VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-        distributionSection(
-          rootNode: rootNode,
-          scanRootNode: scanRootNode,
-          chartHeight: Layout.chartPreferredHeightSingleColumn,
-          layoutVariant: .singleColumn
+      if !trashQueueState.isEmpty {
+        TrashQueueTrayView(
+          trashQueueState: trashQueueState,
+          onReviewAndDelete: {
+            trashQueueTrashIntent = trashQueueState.makeTrashIntent()
+          },
+          onRevealInFinder: onRevealInFinder,
+          lastReport: lastTrashQueueReport
         )
-        supplementalResultsSections(
-          rootNode: rootNode,
-          useFixedWidth: false,
-          targetHeight: distributionSectionHeights[.singleColumn] ?? 0
-        )
+        .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
-    .onPreferenceChange(DistributionSectionHeightsPreferenceKey.self) { heights in
-      distributionSectionHeights.merge(heights) { _, next in
-        next
-      }
-    }
+    .animation(.easeInOut(duration: 0.22), value: trashQueueState.isEmpty)
     .frame(maxWidth: .infinity, alignment: .topLeading)
+    .background {
+      Button("") {
+        guard let pinned = radialState.pinnedSnapshot,
+              let path = pinned.path,
+              !pinned.isAggregate
+        else { return }
+        trashQueueState.toggle(TrashQueueItem(snapshot: pinned))
+      }
+      .keyboardShortcut(.delete, modifiers: .command)
+      .frame(width: 0, height: 0)
+      .opacity(0)
+    }
   }
 
   private func distributionSection(
@@ -966,6 +1066,7 @@ struct ScanSessionView: View {
         },
         pinnedArcID: radialState.pinnedSnapshot?.id,
         highlightedArcIDs: activeSearchHighlightIDs,
+        queuedArcIDs: trashQueueState.isEmpty ? nil : trashQueueState.queuedPaths,
         onHoverSnapshotChanged: { snapshot in
           hoverState.hoverSnapshot = snapshot
         },
@@ -974,7 +1075,12 @@ struct ScanSessionView: View {
         }
       )
       .contextMenu {
-        RadialContextMenuContent(radialState: radialState, hoverState: hoverState)
+        RadialContextMenuContent(
+          radialState: radialState,
+          hoverState: hoverState,
+          trashQueueState: trashQueueState,
+          onRevealInFinder: onRevealInFinder
+        )
       }
       .id("radial-\(rootNode.path)")
       .frame(maxWidth: .infinity)
@@ -1044,13 +1150,15 @@ struct ScanSessionView: View {
             RadialDetailsPanelContainer(
               radialState: radialState,
               hoverState: hoverState,
-              targetHeight: adjustedHeight
+              targetHeight: adjustedHeight,
+              onRevealInFinder: onRevealInFinder
             )
           } else {
             TopItemsPanel(
               rootNode: rootNode,
               onRevealInFinder: onRevealInFinder,
-              targetHeight: adjustedHeight
+              targetHeight: adjustedHeight,
+              trashQueueState: trashQueueState
             )
           }
         }

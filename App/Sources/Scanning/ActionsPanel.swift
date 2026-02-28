@@ -180,7 +180,7 @@ enum FileActionService {
     "/private/var/folders"
   ]
 
-  private static func isBlockedSystemPath(_ path: String) -> Bool {
+  static func isBlockedSystemPath(_ path: String) -> Bool {
     for prefix in blockedPrefixes {
       if path == prefix || path.hasPrefix(prefix + "/") {
         return true

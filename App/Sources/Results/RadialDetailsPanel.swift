@@ -7,6 +7,7 @@ struct RadialDetailsPanel: View {
   let isPinned: Bool
   let onClearPinnedSelection: () -> Void
   let targetHeight: CGFloat
+  var onRevealInFinder: ((String) -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -34,7 +35,7 @@ struct RadialDetailsPanel: View {
         }
       }
 
-      Text("Hover to inspect. Right-click the chart to pin or unpin a selection.")
+      Text("Hover to inspect. Right-click the chart to pin, reveal, or queue items for deletion.")
         .font(.system(size: 11, weight: .regular))
         .foregroundStyle(AppTheme.Colors.textTertiary)
 
@@ -115,6 +116,18 @@ struct RadialDetailsPanel: View {
       }
 
       Spacer(minLength: 8)
+
+      if let path = snapshot.path, !snapshot.isAggregate, let onRevealInFinder {
+        Button {
+          onRevealInFinder(path)
+        } label: {
+          Image(systemName: "arrow.up.forward.square")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .help("Reveal in Finder")
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }

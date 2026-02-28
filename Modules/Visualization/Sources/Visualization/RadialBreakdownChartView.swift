@@ -246,6 +246,7 @@ public struct RadialBreakdownChartView: View {
   private let onPathActivated: ((String) -> Void)?
   private let pinnedArcID: String?
   private let highlightedArcIDs: Set<String>?
+  private let queuedArcIDs: Set<String>?
   private let onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)?
   private let onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)?
 
@@ -293,6 +294,7 @@ public struct RadialBreakdownChartView: View {
     onPathActivated: ((String) -> Void)? = nil,
     pinnedArcID: String? = nil,
     highlightedArcIDs: Set<String>? = nil,
+    queuedArcIDs: Set<String>? = nil,
     onHoverSnapshotChanged: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil,
     onRootSnapshotReady: ((RadialBreakdownInspectorSnapshot?) -> Void)? = nil
   ) {
@@ -306,6 +308,7 @@ public struct RadialBreakdownChartView: View {
     self.onPathActivated = onPathActivated
     self.pinnedArcID = pinnedArcID
     self.highlightedArcIDs = highlightedArcIDs
+    self.queuedArcIDs = queuedArcIDs
     self.onHoverSnapshotChanged = onHoverSnapshotChanged
     self.onRootSnapshotReady = onRootSnapshotReady
   }
@@ -384,6 +387,7 @@ public struct RadialBreakdownChartView: View {
       let activePinnedArcID = pinnedArcID
       let relatedArcIDs = relatedArcIDs(for: activePinnedArcID)
       let activeHighlightedArcIDs = highlightedArcIDs
+      let activeQueuedArcIDs = queuedArcIDs
 
       ZStack {
         Canvas { context, _ in
@@ -396,6 +400,7 @@ public struct RadialBreakdownChartView: View {
               hoverPresentationProgress: hoverPresentationProgress,
               relatedArcIDs: relatedArcIDs,
               highlightedArcIDs: activeHighlightedArcIDs,
+              queuedArcIDs: activeQueuedArcIDs,
               context: &context
             )
           }
@@ -516,6 +521,7 @@ public struct RadialBreakdownChartView: View {
     hoverPresentationProgress: CGFloat,
     relatedArcIDs: Set<String>?,
     highlightedArcIDs: Set<String>?,
+    queuedArcIDs: Set<String>?,
     context: inout GraphicsContext
   ) {
     let isSelected = activeArcID == arc.id
@@ -568,6 +574,8 @@ public struct RadialBreakdownChartView: View {
     )
     path.closeSubpath()
 
+    let isQueued = queuedArcIDs?.contains(arc.id) == true
+
     context.fill(
       path,
       with: .color(
@@ -576,11 +584,20 @@ public struct RadialBreakdownChartView: View {
           activeArcID: activeArcID,
           relatedArcIDs: relatedArcIDs,
           highlightedArcIDs: highlightedArcIDs,
+          queuedArcIDs: queuedArcIDs,
           hoveredArcID: hoveredArcID,
           hoverPresentationProgress: hoverProgress
         )
       )
     )
+
+    if isQueued {
+      context.stroke(
+        path,
+        with: .color(Color(red: 0.9, green: 0.3, blue: 0.25).opacity(0.6)),
+        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+      )
+    }
 
     if usesStrongHoverPresentation {
       let liftBoost: CGFloat = shouldLiftHoveredArc ? 1.2 : 1
@@ -616,6 +633,7 @@ public struct RadialBreakdownChartView: View {
     activeArcID: String?,
     relatedArcIDs: Set<String>?,
     highlightedArcIDs: Set<String>?,
+    queuedArcIDs: Set<String>?,
     hoveredArcID: String?,
     hoverPresentationProgress: CGFloat
   ) -> Color {
@@ -623,6 +641,7 @@ public struct RadialBreakdownChartView: View {
     let depthOpacity = max(0.62, 0.94 - (Double(max(arc.depth - 1, 0)) * 0.08))
     let opacity: Double
     let clampedHoverProgress = Double(min(max(hoverPresentationProgress, 0), 1))
+    let isQueued = queuedArcIDs?.contains(arc.id) == true
 
     if let activeArcID {
       if relatedArcIDs?.contains(arc.id) == true {
@@ -646,6 +665,11 @@ public struct RadialBreakdownChartView: View {
       }
     } else {
       opacity = depthOpacity
+    }
+
+    if isQueued {
+      let queuedColor = Color(red: 0.85, green: 0.32, blue: 0.28)
+      return queuedColor.opacity(opacity * 0.75)
     }
 
     return base.opacity(opacity)

@@ -194,17 +194,20 @@ struct TopItemsPanel: View {
   let rootNode: FileNode
   let onRevealInFinder: (String) -> Void
   let targetHeight: CGFloat
+  var trashQueueState: TrashQueueState?
 
   @StateObject private var store = TopConsumersStore()
 
   init(
     rootNode: FileNode,
     onRevealInFinder: @escaping (String) -> Void,
-    targetHeight: CGFloat = 0
+    targetHeight: CGFloat = 0,
+    trashQueueState: TrashQueueState? = nil
   ) {
     self.rootNode = rootNode
     self.onRevealInFinder = onRevealInFinder
     self.targetHeight = targetHeight
+    self.trashQueueState = trashQueueState
   }
 
   var body: some View {
@@ -242,9 +245,18 @@ struct TopItemsPanel: View {
           .foregroundStyle(AppTheme.Colors.textTertiary)
       } else {
         List(entries) { entry in
-          TopItemsRow(entry: entry) {
-            onRevealInFinder(entry.node.path)
-          }
+          TopItemsRow(
+            entry: entry,
+            isQueued: trashQueueState?.contains(path: entry.node.path) ?? false,
+            onReveal: {
+              onRevealInFinder(entry.node.path)
+            },
+            onToggleTrashQueue: trashQueueState.map { state in
+              {
+                state.toggle(TrashQueueItem(node: entry.node))
+              }
+            }
+          )
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -306,7 +318,9 @@ struct TopItemsPanel: View {
 
 private struct TopItemsRow: View {
   let entry: TopConsumerEntry
+  let isQueued: Bool
   let onReveal: () -> Void
+  var onToggleTrashQueue: (() -> Void)?
 
   @State private var isHovered = false
 
@@ -323,6 +337,24 @@ private struct TopItemsRow: View {
         .lineLimit(1)
 
       Spacer()
+
+      if let onToggleTrashQueue {
+        Button(action: onToggleTrashQueue) {
+          Image(systemName: isQueued ? "minus.circle.fill" : "trash")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(isQueued ? Color.red.opacity(0.8) : AppTheme.Colors.textSecondary)
+            .frame(width: 18, height: 18)
+            .background(
+              RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(AppTheme.Colors.surfaceElevated.opacity(0.75))
+            )
+        }
+        .buttonStyle(.plain)
+        .help(isQueued ? "Remove from Trash Queue" : "Add to Trash Queue")
+        .opacity(isQueued || isHovered ? 1 : 0)
+        .disabled(!isQueued && !isHovered)
+        .accessibilityHidden(!isQueued && !isHovered)
+      }
 
       Button(action: onReveal) {
         Image(systemName: "arrow.up.forward.square")
@@ -347,6 +379,9 @@ private struct TopItemsRow: View {
     .help(entry.node.path)
     .contextMenu {
       Button("Reveal in Finder", action: onReveal)
+      if let onToggleTrashQueue {
+        Button(isQueued ? "Remove from Trash Queue" : "Add to Trash Queue", action: onToggleTrashQueue)
+      }
     }
     .onHover { isHovering in
       isHovered = isHovering
