@@ -1,7 +1,48 @@
 import CoreScan
 import LunardiskAI
+import Observation
 import SwiftUI
 import Visualization
+
+@Observable
+private final class RadialInteractionState {
+  var drillPathStack: [String] = []
+  var hoverSnapshot: RadialBreakdownInspectorSnapshot?
+  var rootSnapshot: RadialBreakdownInspectorSnapshot?
+  var pinnedSnapshot: RadialBreakdownInspectorSnapshot?
+  var supplementalMode: ScanSessionView.OverviewSupplementalMode = .details
+
+  var selectedDetailSnapshot: RadialBreakdownInspectorSnapshot? {
+    pinnedSnapshot ?? hoverSnapshot ?? rootSnapshot
+  }
+
+  func pinSelection(_ snapshot: RadialBreakdownInspectorSnapshot) {
+    pinnedSnapshot = snapshot
+    supplementalMode = .details
+  }
+
+  func clearPinnedSelection() {
+    pinnedSnapshot = nil
+  }
+
+  func clearInspectorSnapshots(clearPinned: Bool = true) {
+    hoverSnapshot = nil
+    rootSnapshot = nil
+    if clearPinned {
+      pinnedSnapshot = nil
+    }
+  }
+
+  func resetDrill(for rootNode: FileNode?, breakdownViewMode: ScanSessionView.BreakdownViewMode) {
+    clearInspectorSnapshots()
+    supplementalMode = ScanSessionView.defaultSupplementalMode(for: breakdownViewMode)
+    if let rootNode {
+      drillPathStack = [rootNode.path]
+    } else {
+      drillPathStack = []
+    }
+  }
+}
 
 struct ScanSessionView: View {
   private enum ResultsLayoutVariant: Hashable {
@@ -49,14 +90,14 @@ struct ScanSessionView: View {
     }
   }
 
-  private enum BreakdownViewMode: String, CaseIterable, Identifiable {
+  enum BreakdownViewMode: String, CaseIterable, Identifiable {
     case treemap
     case radial
 
     var id: String { rawValue }
   }
 
-  private enum OverviewSupplementalMode: String, CaseIterable, Identifiable {
+  enum OverviewSupplementalMode: String, CaseIterable, Identifiable {
     case details
     case topItems
 
@@ -112,11 +153,7 @@ struct ScanSessionView: View {
   @State private var revealBody = false
   @State private var cachedInsightsSnapshot: (key: String, snapshot: ScanInsightsSnapshot)?
   @State private var cachedActionsSnapshot: (key: String, snapshot: ScanActionsSnapshot)?
-  @State private var radialDrillPathStack: [String] = []
-  @State private var overviewSupplementalMode: OverviewSupplementalMode = .details
-  @State private var radialHoverSnapshot: RadialBreakdownInspectorSnapshot?
-  @State private var radialRootSnapshot: RadialBreakdownInspectorSnapshot?
-  @State private var radialPinnedSnapshot: RadialBreakdownInspectorSnapshot?
+  @State private var radialState = RadialInteractionState()
   @Namespace private var sectionTabSelectionNamespace
 
   private var phase: SessionPhase {
@@ -197,19 +234,19 @@ struct ScanSessionView: View {
     .onChange(of: isScanning) { _, scanning in
       if scanning {
         selectedSection = .overview
-        resetRadialDrill(for: nil)
-      } else if let rootNode, radialDrillPathStack.isEmpty {
-        resetRadialDrill(for: rootNode)
+        radialState.resetDrill(for: nil, breakdownViewMode: breakdownViewMode)
+      } else if let rootNode, radialState.drillPathStack.isEmpty {
+        radialState.resetDrill(for: rootNode, breakdownViewMode: breakdownViewMode)
       }
     }
     .onChange(of: breakdownViewMode) { _, mode in
-      overviewSupplementalMode = defaultSupplementalMode(for: mode)
+      radialState.supplementalMode = Self.defaultSupplementalMode(for: mode)
     }
     .onChange(of: rootNode?.id) { _, newRootID in
       if newRootID == nil {
         selectedSection = .overview
       }
-      resetRadialDrill(for: rootNode)
+      radialState.resetDrill(for: rootNode, breakdownViewMode: breakdownViewMode)
       cachedInsightsSnapshot = nil
       cachedActionsSnapshot = nil
     }
@@ -752,12 +789,12 @@ struct ScanSessionView: View {
             onPathActivated: { path in
               handleRadialPathActivation(path: path, scanRootNode: scanRootNode)
             },
-            pinnedArcID: radialPinnedSnapshot?.id,
+            pinnedArcID: radialState.pinnedSnapshot?.id,
             onHoverSnapshotChanged: { snapshot in
-              radialHoverSnapshot = snapshot
+              radialState.hoverSnapshot = snapshot
             },
             onRootSnapshotReady: { snapshot in
-              radialRootSnapshot = snapshot
+              radialState.rootSnapshot = snapshot
             }
           )
           .contextMenu {
@@ -771,7 +808,7 @@ struct ScanSessionView: View {
       .frame(height: effectiveChartHeight)
       .animation(.easeInOut(duration: 0.22), value: breakdownViewMode)
       .animation(.easeInOut(duration: 0.16), value: treemapDensity)
-      .animation(.easeInOut(duration: 0.18), value: radialDrillPathStack)
+      .animation(.easeInOut(duration: 0.18), value: radialState.drillPathStack)
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
           .fill(AppTheme.Colors.surfaceElevated.opacity(0.38))
@@ -859,12 +896,12 @@ struct ScanSessionView: View {
       overviewSupplementalModePicker
 
       Group {
-        if overviewSupplementalMode == .details {
+        if radialState.supplementalMode == .details {
           RadialDetailsPanel(
-            snapshot: selectedRadialDetailSnapshot,
-            isPinned: radialPinnedSnapshot != nil,
+            snapshot: radialState.selectedDetailSnapshot,
+            isPinned: radialState.pinnedSnapshot != nil,
             onClearPinnedSelection: {
-              clearPinnedRadialSelection()
+              radialState.clearPinnedSelection()
             },
             targetHeight: adjustedHeight
           )
@@ -886,7 +923,7 @@ struct ScanSessionView: View {
         LunarSegmentedControlOption(OverviewSupplementalMode.details.title, value: OverviewSupplementalMode.details),
         LunarSegmentedControlOption(OverviewSupplementalMode.topItems.title, value: OverviewSupplementalMode.topItems)
       ],
-      selection: $overviewSupplementalMode,
+      selection: Bindable(radialState).supplementalMode,
       minItemWidth: 98
     )
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -894,13 +931,13 @@ struct ScanSessionView: View {
 
   @ViewBuilder
   private var radialChartContextMenu: some View {
-    if let hoveredSnapshot = radialHoverSnapshot {
-      let isAlreadyPinned = radialPinnedSnapshot?.id == hoveredSnapshot.id
+    if let hoveredSnapshot = radialState.hoverSnapshot {
+      let isAlreadyPinned = radialState.pinnedSnapshot?.id == hoveredSnapshot.id
       Button(isAlreadyPinned ? "Unpin \"\(hoveredSnapshot.label)\"" : "Pin \"\(hoveredSnapshot.label)\"") {
         if isAlreadyPinned {
-          clearPinnedRadialSelection()
+          radialState.clearPinnedSelection()
         } else {
-          pinRadialSelection(hoveredSnapshot)
+          radialState.pinSelection(hoveredSnapshot)
         }
       }
     } else {
@@ -908,12 +945,12 @@ struct ScanSessionView: View {
         .disabled(true)
     }
 
-    if let pinnedSnapshot = radialPinnedSnapshot,
-       radialHoverSnapshot?.id != pinnedSnapshot.id
+    if let pinnedSnapshot = radialState.pinnedSnapshot,
+       radialState.hoverSnapshot?.id != pinnedSnapshot.id
     {
       Divider()
       Button("Unpin \"\(pinnedSnapshot.label)\"") {
-        clearPinnedRadialSelection()
+        radialState.clearPinnedSelection()
       }
     }
   }
@@ -944,7 +981,7 @@ struct ScanSessionView: View {
       .padding(.vertical, 2)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .animation(.easeInOut(duration: 0.18), value: radialDrillPathStack)
+    .animation(.easeInOut(duration: 0.18), value: radialState.drillPathStack)
   }
 
   private func breadcrumbChip(
@@ -992,11 +1029,7 @@ struct ScanSessionView: View {
     .help(helpText)
   }
 
-  private var selectedRadialDetailSnapshot: RadialBreakdownInspectorSnapshot? {
-    radialPinnedSnapshot ?? radialHoverSnapshot ?? radialRootSnapshot
-  }
-
-  private func defaultSupplementalMode(for viewMode: BreakdownViewMode) -> OverviewSupplementalMode {
+  static func defaultSupplementalMode(for viewMode: BreakdownViewMode) -> OverviewSupplementalMode {
     switch viewMode {
     case .radial:
       return .details
@@ -1005,35 +1038,8 @@ struct ScanSessionView: View {
     }
   }
 
-  private func pinRadialSelection(_ snapshot: RadialBreakdownInspectorSnapshot) {
-    radialPinnedSnapshot = snapshot
-    overviewSupplementalMode = .details
-  }
-
-  private func clearPinnedRadialSelection() {
-    radialPinnedSnapshot = nil
-  }
-
-  private func clearRadialInspectorSnapshots(clearPinned: Bool = true) {
-    radialHoverSnapshot = nil
-    radialRootSnapshot = nil
-    if clearPinned {
-      radialPinnedSnapshot = nil
-    }
-  }
-
-  private func resetRadialDrill(for rootNode: FileNode?) {
-    clearRadialInspectorSnapshots()
-    overviewSupplementalMode = defaultSupplementalMode(for: breakdownViewMode)
-    if let rootNode {
-      radialDrillPathStack = [rootNode.path]
-    } else {
-      radialDrillPathStack = []
-    }
-  }
-
   private func focusedOverviewNode(in scanRootNode: FileNode) -> FileNode {
-    if let candidatePath = radialDrillPathStack.last,
+    if let candidatePath = radialState.drillPathStack.last,
        let candidateNode = node(at: candidatePath, in: scanRootNode)
     {
       return candidateNode
@@ -1042,11 +1048,11 @@ struct ScanSessionView: View {
   }
 
   private func radialBreadcrumbs(in scanRootNode: FileNode) -> [FileNode] {
-    guard !radialDrillPathStack.isEmpty else {
+    guard !radialState.drillPathStack.isEmpty else {
       return [scanRootNode]
     }
 
-    let resolved = radialDrillPathStack.compactMap { path in
+    let resolved = radialState.drillPathStack.compactMap { path in
       node(at: path, in: scanRootNode)
     }
 
@@ -1070,17 +1076,17 @@ struct ScanSessionView: View {
     }
 
     let nextStack = chain.map(\.path)
-    let currentStack = radialDrillPathStack.isEmpty ? [scanRootNode.path] : radialDrillPathStack
+    let currentStack = radialState.drillPathStack.isEmpty ? [scanRootNode.path] : radialState.drillPathStack
     guard nextStack != currentStack else { return }
 
-    clearRadialInspectorSnapshots()
-    radialDrillPathStack = nextStack
+    radialState.clearInspectorSnapshots()
+    radialState.drillPathStack = nextStack
   }
 
   private func jumpToRadialBreadcrumb(path: String) {
-    guard let index = radialDrillPathStack.firstIndex(of: path) else { return }
-    clearRadialInspectorSnapshots()
-    radialDrillPathStack = Array(radialDrillPathStack.prefix(index + 1))
+    guard let index = radialState.drillPathStack.firstIndex(of: path) else { return }
+    radialState.clearInspectorSnapshots()
+    radialState.drillPathStack = Array(radialState.drillPathStack.prefix(index + 1))
   }
 
   private func nodePathChain(to targetPath: String, in rootNode: FileNode) -> [FileNode]? {

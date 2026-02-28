@@ -3,7 +3,7 @@ import CoreScan
 import QuartzCore
 import SwiftUI
 
-final class RadialBreakdownChartData {
+private final class RadialBreakdownChartData {
   let rootSizeBytes: Int64
   let rootArcID: String
   let nonRootArcs: [RadialBreakdownArc]

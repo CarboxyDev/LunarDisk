@@ -101,12 +101,16 @@ final class AppModel: ObservableObject {
     scanWarningMessage = nil
     scanProgress = nil
 
-    let progressScanID = scanID
-    let progressHandler: @Sendable (ScanProgress) -> Void = { [weak self] progress in
-      Task { @MainActor [weak self] in
-        guard let self, self.activeScanID == progressScanID else { return }
+    let (progressStream, progressContinuation) = AsyncStream.makeStream(of: ScanProgress.self)
+    let progressTask = Task { @MainActor [weak self] in
+      for await progress in progressStream {
+        guard let self, self.activeScanID == scanID else { break }
         self.scanProgress = progress
       }
+    }
+    defer {
+      progressContinuation.finish()
+      progressTask.cancel()
     }
 
     do {
@@ -115,7 +119,7 @@ final class AppModel: ObservableObject {
         at: url,
         maxDepth: 8,
         sizeStrategy: scanSizeStrategy,
-        onProgress: progressHandler
+        onProgress: { progress in progressContinuation.yield(progress) }
       )
       try Task.checkCancellation()
       guard activeScanID == scanID else { return }

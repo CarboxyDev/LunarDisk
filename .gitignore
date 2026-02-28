@@ -4,3 +4,10 @@
 .swiftpm/
 Lunardisk.xcodeproj/
 dist/
+
+# Xcode build output
+build/
+*.xcbuilddata/
+DerivedData/
+*.xcuserstate
+xcuserdata/
